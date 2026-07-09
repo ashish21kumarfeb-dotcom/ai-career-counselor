@@ -7,7 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:memory": "tsx tests/memory-extraction.test.mts"
+    "test:memory": "tsx tests/memory-extraction.test.mts",
+    "test:tools": "tsx tests/agent-tools.test.mts",
+    "seed:documents": "tsx src/db/seed/documents.ts",
+    "seed:agencies": "tsx src/db/seed/agencies.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
