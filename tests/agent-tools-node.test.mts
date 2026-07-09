@@ -36,6 +36,8 @@ function makeState(query: string, sections: SectionName[]): AgentStateType {
     ragDocs: [],
     plan: { sections, reasoning: "test" },
     toolResults: { agencies: [], resources: [] },
+    sections: undefined,
+    verification: undefined,
   };
 }
 

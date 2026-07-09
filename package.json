@@ -11,6 +11,7 @@
     "test:tools": "tsx tests/agent-tools.test.mts",
     "test:planner": "tsx tests/agent-planner.test.mts",
     "test:tools-node": "tsx tests/agent-tools-node.test.mts",
+    "test:generate": "tsx tests/agent-generate.test.mts",
     "seed:documents": "tsx src/db/seed/documents.ts",
     "seed:agencies": "tsx src/db/seed/agencies.ts"
   },

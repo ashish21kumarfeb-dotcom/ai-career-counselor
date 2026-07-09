@@ -38,6 +38,38 @@ export type AgentPlan = {
   reasoning: string;
 };
 
+// --- Final response sections --------------------------------------------------
+// A DB-backed link/agency item. Never LLM-invented — always mapped from a tool
+// result row.
+export type ResourceItem = { title: string; type: string; url: string | null };
+export type AgencyItem = {
+  name: string;
+  location: string | null;
+  services: string | null;
+  website: string | null;
+  source: string | null;
+};
+
+// A DB-backed section: its items plus an optional note. When the section was
+// requested but the tool returned nothing, items is [] and note states plainly
+// that no verified data was found (never invented).
+export type Sourced<T> = { items: T[]; note?: string };
+
+// The dynamic response: only the planned sections are present.
+export type ResponseSections = {
+  ai_suggestion?: string;
+  // roadmap.suggested = true means it is a general suggested roadmap (opinion),
+  // NOT grounded in a verified resource.
+  roadmap?: { items: string[]; suggested: boolean };
+  resources?: Sourced<ResourceItem>;
+  courses?: Sourced<ResourceItem>;
+  agencies?: Sourced<AgencyItem>;
+  next_steps?: string[];
+};
+
+// Reflection/verification result recorded on the response.
+export type Verification = { grounded: boolean; safe: boolean; notes: string };
+
 // --- Deterministic gates -----------------------------------------------------
 // Agencies are the SENSITIVE section (SRS: never push consultation the user did
 // not ask for, never invent agencies), so this gate is a hard veto: agencies are
