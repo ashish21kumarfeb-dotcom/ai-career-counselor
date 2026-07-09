@@ -23,7 +23,9 @@ const USER_TYPE_LABELS: Record<string, string> = {
   job_switcher: "Job switcher",
 };
 
-const BASE_PROMPT = `You are an AI Career Counselor for students, freshers, working professionals, and job switchers. Give clear, personalized, and honest career guidance.
+// Exported so the agentic-chat generate node reuses the same role + safety rules
+// as /api/chat (single source of truth). buildSystemPrompt behavior is unchanged.
+export const BASE_PROMPT = `You are an AI Career Counselor for students, freshers, working professionals, and job switchers. Give clear, personalized, and honest career guidance.
 
 Safety rules — always follow these:
 - Never promise or guarantee jobs, interviews, or specific salaries. Real outcomes depend on the user's skills, preparation, market demand, and interview performance.

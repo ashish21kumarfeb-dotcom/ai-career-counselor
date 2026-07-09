@@ -7,10 +7,15 @@
 // reinserts ONLY rows under that prefix, never touching user documents or any
 // other global rows.
 //
+// This file also seeds RESOURCE/COURSE-LINK documents (see RESOURCE_DOCUMENTS):
+// global rows carrying REAL external URLs, which the agentic-chat `searchResources`
+// tool returns as verified resource/course links. These are curated real links, not
+// invented ones. They are kept idempotent by their exact URLs (see seed()).
+//
 // Run standalone:  npx tsx src/db/seed/documents.ts
 // (dotenv must load before ../index, which reads DATABASE_URL at import time.)
 import "dotenv/config";
-import { like } from "drizzle-orm";
+import { inArray, like, or } from "drizzle-orm";
 import { db } from "../index";
 import { documents } from "../schema";
 
@@ -49,13 +54,60 @@ const SEED_DOCUMENTS = [
   },
 ];
 
+// Resource/course-link documents: GLOBAL rows (userId null) with REAL external
+// URLs. `searchResources` returns exactly these (global + http source_url) as
+// linkable resources/courses, while the internal-seed knowledge rows above stay
+// RAG-only. URLs are well-known, stable public resources — curated, not invented.
+const RESOURCE_DOCUMENTS = [
+  {
+    type: "career_data" as const,
+    sourceUrl: "https://roadmap.sh/data-analyst",
+    content:
+      "Data analyst roadmap: a step-by-step learning path covering spreadsheets, SQL, statistics, a data language (Python or R), and a BI/visualization tool such as Power BI or Tableau, followed by portfolio projects on real datasets.",
+  },
+  {
+    type: "career_data" as const,
+    sourceUrl: "https://roadmap.sh/frontend",
+    content:
+      "Frontend / web development roadmap: a structured path through HTML, CSS, JavaScript, a framework such as React, version control with Git, and building and deploying real projects.",
+  },
+  {
+    type: "career_data" as const,
+    sourceUrl: "https://grow.google/certificates/data-analytics/",
+    content:
+      "Google Data Analytics Professional Certificate: a beginner-friendly course and certification covering spreadsheets, SQL, R, and Tableau, aimed at preparing learners for entry-level data analyst roles.",
+  },
+  {
+    type: "career_data" as const,
+    sourceUrl: "https://www.freecodecamp.org/learn/data-analysis-with-python/",
+    content:
+      "Free Data Analysis with Python course: a hands-on curriculum covering Pandas, NumPy, and reading and cleaning data, useful for building data analyst skills and preparation.",
+  },
+  {
+    type: "industry_article" as const,
+    sourceUrl: "https://developer.mozilla.org/en-US/docs/Learn",
+    content:
+      "MDN Learn Web Development: structured, reputable learning guides and resources for HTML, CSS, and JavaScript fundamentals for aspiring web developers.",
+  },
+];
+
 async function seed() {
-  // Idempotent: remove only previously seeded rows (safe prefix), then reinsert.
-  await db.delete(documents).where(like(documents.sourceUrl, `${SEED_PREFIX}%`));
+  // Idempotent: remove only rows this script manages — the internal-seed knowledge
+  // rows (by prefix) AND the resource/course rows (by their exact URLs) — then
+  // reinsert. Never touches user documents or other global rows.
+  const resourceUrls = RESOURCE_DOCUMENTS.map((d) => d.sourceUrl);
+  await db
+    .delete(documents)
+    .where(
+      or(
+        like(documents.sourceUrl, `${SEED_PREFIX}%`),
+        inArray(documents.sourceUrl, resourceUrls)
+      )
+    );
 
   const inserted = await db
     .insert(documents)
-    .values(SEED_DOCUMENTS)
+    .values([...SEED_DOCUMENTS, ...RESOURCE_DOCUMENTS])
     .returning({ id: documents.id, sourceUrl: documents.sourceUrl });
 
   console.log(`Seeded ${inserted.length} documents:`);

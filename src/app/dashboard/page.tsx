@@ -31,6 +31,12 @@ const actions: Action[] = [
     href: "/chat",
   },
   {
+    icon: "✨",
+    title: "AI Agent Chat",
+    body: "A multi-step agent that plans your answer — suggestions, roadmaps, courses, and verified agencies, only when your question needs them.",
+    href: "/agent-chat",
+  },
+  {
     icon: "📄",
     title: "Resume & documents",
     body: "Upload your resume or paste career notes to sharpen your recommendations.",
