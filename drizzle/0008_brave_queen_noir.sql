@@ -1,0 +1,1 @@
+ALTER TABLE "memory" ADD CONSTRAINT "memory_user_key_unique" UNIQUE("user_id","memory_key");

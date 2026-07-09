@@ -1,0 +1,325 @@
+@import "tailwindcss";
+
+:root {
+  --background: #071827; /* midnight ocean */
+  --foreground: #eaf1f6; /* soft white — raised for stronger body contrast */
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+
+  /* Midnight Ocean + Teal Glow palette */
+  --color-midnight: #071827; /* deep midnight base */
+  --color-navy: #0b1120; /* dark navy */
+  --color-teal-deep: #123c4a; /* deep teal */
+  --color-heading: #f3f8fb; /* crisp near-white — headings */
+  --color-brand: #329d9c; /* glow teal */
+  --color-brand-strong: #205072; /* ocean teal */
+  --color-mint: #56c596; /* mint highlight */
+  --color-mint-light: #7be495; /* soft highlight */
+  --color-mint-pale: #cff4d2; /* pale glow */
+  --color-accent: #56c596; /* teal/mint accent */
+  --color-danger: #f26d70; /* reserved for validation errors (readable on dark) */
+
+  /* Text scale overrides — slate-* is used for text only in this app (verified),
+     so lifting these raises contrast everywhere at once while preserving the
+     hierarchy: values brightest → body → secondary/labels → faintest helper. */
+  --color-slate-100: #f4f8fb; /* field values / high-contrast text */
+  --color-slate-200: #e7eef5; /* important body text */
+  --color-slate-300: #d5dee8; /* body text — clearly readable, not washed out */
+  --color-slate-400: #b8c4d3; /* secondary text & labels — muted but legible */
+  --color-slate-500: #94a3b5; /* placeholders / faint helper — subtle, not invisible */
+}
+
+body {
+  min-height: 100vh;
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  /* Midnight Ocean + Sky-Blue Clouds — bright blue patches spread across the
+     whole viewport over a dark ocean base, so the depth reads as soft cloudy
+     variation rather than one flat gradient. */
+  background-color: #08192a;
+  background-image:
+    /* broad sky-blue wash across the upper half — the core sky/ocean blend */
+    radial-gradient(1700px 1020px at 50% -4%, rgba(56, 174, 234, 0.3), transparent 66%),
+    /* bright sky-blue cloud, upper-left */
+    radial-gradient(980px 720px at 14% 14%, rgba(30, 136, 200, 0.38), transparent 56%),
+    /* strong blue glow rising behind the hero, upper-center */
+    radial-gradient(1120px 860px at 50% 14%, rgba(56, 174, 234, 0.4), transparent 58%),
+    /* bright cyan highlight, center-right */
+    radial-gradient(760px 580px at 80% 22%, rgba(124, 203, 255, 0.24), transparent 54%),
+    /* cyan puff, mid */
+    radial-gradient(560px 460px at 63% 42%, rgba(124, 203, 255, 0.16), transparent 52%),
+    /* blue cloud, lower-left */
+    radial-gradient(900px 680px at 22% 70%, rgba(38, 146, 210, 0.22), transparent 56%),
+    /* blue cloud, lower-right */
+    radial-gradient(860px 680px at 84% 76%, rgba(30, 136, 200, 0.18), transparent 56%),
+    /* soft teal glow near cards, bottom-center — keeps the ocean identity */
+    radial-gradient(1040px 740px at 58% 110%, rgba(50, 157, 156, 0.18), transparent 60%),
+    /* soft mint accent only */
+    radial-gradient(560px 420px at 84% 16%, rgba(86, 197, 150, 0.1), transparent 52%),
+    /* navy vignette — dark ocean edges keep midnight depth on top of the blue */
+    radial-gradient(1650px 1250px at 50% 46%, transparent 50%, rgba(4, 10, 24, 0.72) 100%),
+    /* base: blue-navy top → midnight → deep teal bottom (ocean foundation) */
+    linear-gradient(160deg, #0e2c48 0%, #0b1120 34%, #08192a 60%, #0e2f3d 85%, #123c4a 100%);
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+}
+
+/* Gently animated aurora / underwater-light layers. Two oversized fixed
+   pseudo-elements of soft sky-blue / teal / mint blobs drift slowly above the
+   static base gradient but below all content (z-index:-1, no pointer events),
+   so cards and text never move and readability is untouched. Transform-only
+   animation stays on the compositor (no repaint). */
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  inset: -20%;
+  z-index: -2;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+/* Space decorations — twinkling stars, shooting stars, doodle planets. */
+.space-decor .star {
+  position: absolute;
+  border-radius: 9999px;
+  background: #ffffff;
+  box-shadow: 0 0 6px 1px rgba(255, 255, 255, 0.45);
+  animation-name: twinkle;
+  animation-iteration-count: infinite;
+  animation-timing-function: ease-in-out;
+}
+
+.space-decor .ss-streak {
+  position: absolute;
+  width: 130px;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.9));
+  opacity: 0;
+  animation-name: shoot;
+  animation-iteration-count: infinite;
+  animation-timing-function: ease-out;
+}
+
+.space-decor .planet {
+  position: absolute;
+  animation: planet-float 16s ease-in-out infinite;
+}
+
+@keyframes twinkle {
+  0%,
+  100% {
+    opacity: 0.2;
+    transform: scale(0.75);
+  }
+  50% {
+    opacity: 0.95;
+    transform: scale(1.15);
+  }
+}
+
+@keyframes shoot {
+  0% {
+    opacity: 0;
+    transform: translateX(-60px);
+  }
+  4% {
+    opacity: 0.9;
+  }
+  16% {
+    opacity: 0;
+    transform: translateX(340px);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(340px);
+  }
+}
+
+@keyframes planet-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .space-decor .star {
+    animation: none;
+    opacity: 0.5;
+  }
+  .space-decor .ss-streak {
+    display: none;
+  }
+  .space-decor .planet {
+    animation: none;
+  }
+}
+
+body::before {
+  background:
+    /* purple — high contrast against the blue/teal ocean, so the drift reads */
+    radial-gradient(46% 38% at 26% 26%, rgba(149, 108, 255, 0.4), transparent 60%),
+    /* soft white glow — bright moving highlight */
+    radial-gradient(40% 34% at 76% 40%, rgba(255, 255, 255, 0.14), transparent 62%),
+    /* teal — keeps the ocean identity */
+    radial-gradient(40% 34% at 54% 80%, rgba(50, 157, 156, 0.36), transparent 64%);
+  animation: aurora-drift-a 7s ease-in-out infinite alternate;
+}
+
+body::after {
+  background:
+    /* sky-blue */
+    radial-gradient(44% 36% at 72% 18%, rgba(124, 203, 255, 0.36), transparent 60%),
+    /* violet */
+    radial-gradient(46% 38% at 20% 58%, rgba(176, 130, 255, 0.36), transparent 62%),
+    /* soft white highlight */
+    radial-gradient(38% 32% at 84% 82%, rgba(255, 255, 255, 0.12), transparent 64%);
+  animation: aurora-drift-b 10s ease-in-out infinite alternate;
+}
+
+@keyframes aurora-drift-a {
+  0% {
+    transform: translate3d(-14%, -9%, 0) scale(1);
+    opacity: 0.32;
+  }
+  50% {
+    transform: translate3d(14%, 10%, 0) scale(1.28);
+    opacity: 0.7;
+  }
+  100% {
+    transform: translate3d(-9%, 14%, 0) scale(1.12);
+    opacity: 0.5;
+  }
+}
+
+@keyframes aurora-drift-b {
+  0% {
+    transform: translate3d(13%, 8%, 0) scale(1.18);
+    opacity: 0.62;
+  }
+  50% {
+    transform: translate3d(-14%, -10%, 0) scale(1);
+    opacity: 0.28;
+  }
+  100% {
+    transform: translate3d(10%, -8%, 0) scale(1.22);
+    opacity: 0.68;
+  }
+}
+
+/* Decorative sketch rocket — hidden for reduced-motion users (it's purely
+   decorative, and its SMIL motion can't be paused via CSS). */
+@media (prefers-reduced-motion: reduce) {
+  .sketch-rocket {
+    display: none;
+  }
+}
+
+@layer components {
+  /* Dark glass — the core surface of the design system. A dark navy tint (rather
+     than a light-white film) keeps text readable over the bright sky-blue glow. */
+  .glass {
+    background: rgba(9, 23, 39, 0.55);
+    backdrop-filter: blur(20px) saturate(140%);
+    -webkit-backdrop-filter: blur(20px) saturate(140%);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    box-shadow:
+      0 18px 48px -20px rgba(0, 0, 0, 0.55),
+      inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  }
+
+  /* Dark glass content cards */
+  .glass-card {
+    background: rgba(9, 23, 39, 0.56);
+    backdrop-filter: blur(18px) saturate(140%);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    box-shadow:
+      0 16px 42px -22px rgba(0, 0, 0, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+  }
+  .glass-card-hover:hover {
+    transform: translateY(-3px);
+    border-color: rgba(86, 197, 150, 0.4);
+    box-shadow:
+      0 24px 54px -24px rgba(0, 0, 0, 0.6),
+      0 0 0 1px rgba(86, 197, 150, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  }
+
+  /* Frosted navbar / floating pill */
+  .glass-nav {
+    background: rgba(8, 21, 36, 0.62);
+    backdrop-filter: blur(20px) saturate(140%);
+    -webkit-backdrop-filter: blur(20px) saturate(140%);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    box-shadow: 0 12px 36px -18px rgba(0, 0, 0, 0.5);
+  }
+
+  /* Dark-glass form controls — readable on the ocean background */
+  .glass-input {
+    background: rgba(8, 20, 34, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    color: #f4f8fb;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+  }
+  .glass-input::placeholder {
+    color: rgba(203, 216, 228, 0.6);
+  }
+  .glass-input:focus {
+    outline: none;
+    border-color: rgba(86, 197, 150, 0.7);
+    background: rgba(8, 20, 34, 0.62);
+    box-shadow: 0 0 0 3px rgba(50, 157, 156, 0.25);
+  }
+
+  /* Premium teal → mint gradient CTA with soft glow */
+  .btn-primary {
+    background: linear-gradient(135deg, #329d9c 0%, #56c596 100%);
+    color: #ffffff;
+    box-shadow:
+      0 14px 32px -12px rgba(50, 157, 156, 0.6),
+      inset 0 1px 0 rgba(255, 255, 255, 0.28);
+    transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+  }
+  .btn-primary:hover {
+    filter: brightness(1.06);
+    transform: translateY(-1px);
+    box-shadow:
+      0 18px 40px -12px rgba(86, 197, 150, 0.7),
+      inset 0 1px 0 rgba(255, 255, 255, 0.32);
+  }
+  .btn-primary:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+    filter: none;
+  }
+
+  /* Ghost glass button */
+  .btn-ghost {
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    color: #e6eef3;
+    transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+  }
+  .btn-ghost:hover {
+    background: rgba(255, 255, 255, 0.13);
+    border-color: rgba(255, 255, 255, 0.28);
+  }
+  .btn-ghost:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+}
