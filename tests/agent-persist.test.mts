@@ -38,6 +38,7 @@ function makeState(over: Partial<AgentStateType>): AgentStateType {
     toolResults: { agencies: [], resources: [] },
     sections: undefined,
     verification: undefined,
+    evaluation: undefined,
     ...over,
   };
 }
@@ -58,6 +59,7 @@ try {
       agencies: [{ id: "ag1", name: "X", location: "Delhi", services: "counselling", website: null, sourceUrl: "internal-seed/x" }],
       resources: [{ id: "doc1", type: "career_data", content: "Roadmap", sourceUrl: "https://roadmap.sh/data-analyst" }],
     },
+    evaluation: { groundedness: 8, relevance: 9, personalization: 6, actionability: 8, safety: 10, hallucination_risk: "low", notes: "ok", overall: 8.2 },
   });
 
   await logNode({ ...logState, persist: false });
@@ -71,6 +73,7 @@ try {
   check("row stores the intent", rows[0]?.intent === "career_advice");
   check("row stores 2 sources (agency + resource)", Array.isArray(rows[0]?.sourcesUsed) && (rows[0]?.sourcesUsed as unknown[]).length === 2, JSON.stringify(rows[0]?.sourcesUsed));
   check("finalAnswer is the serialized sections", typeof rows[0]?.finalAnswer === "string" && rows[0]!.finalAnswer!.includes("ai_suggestion"));
+  check("row stores evaluation_score (SRS §8)", !!rows[0]?.evaluationScore && (rows[0]!.evaluationScore as { overall?: number }).overall === 8.2, JSON.stringify(rows[0]?.evaluationScore));
 
   // ===== memory node =====
   console.log("\n== memory node ==");

@@ -45,6 +45,7 @@ export async function POST(request: Request) {
         plan: result.plan,
         sections: result.sections,
         verification: result.verification,
+        evaluation: result.evaluation,
       },
       { status: 200 }
     );

@@ -24,12 +24,69 @@ type Sections = {
   agencies?: Sourced<AgencyItem>;
   next_steps?: string[];
 };
+type Evaluation = {
+  groundedness: number;
+  relevance: number;
+  personalization: number;
+  actionability: number;
+  safety: number;
+  hallucination_risk: "low" | "medium" | "high";
+  notes: string;
+  overall: number;
+};
 type AgentResponse = {
   intent: string;
   plan: { sections: string[]; reasoning: string };
   sections: Sections;
   verification: { grounded: boolean; safe: boolean; notes: string };
+  evaluation?: Evaluation | null;
 };
+
+const RISK_CLASS: Record<string, string> = {
+  low: "border-accent/30 bg-accent/10 text-mint-light",
+  medium: "border-amber-400/30 bg-amber-400/10 text-amber-300",
+  high: "border-danger/30 bg-danger/10 text-danger",
+};
+
+function MetricBar({ label, value }: { label: string; value: number }) {
+  return (
+    <div>
+      <div className="flex items-center justify-between text-[11px] text-slate-400">
+        <span>{label}</span>
+        <span className="tabular-nums text-slate-300">{value}/10</span>
+      </div>
+      <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/10">
+        <div className="h-full rounded-full bg-accent" style={{ width: `${Math.max(0, Math.min(10, value)) * 10}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function EvaluationView({ e }: { e: Evaluation }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Evaluation</h4>
+        <div className="flex items-center gap-2">
+          <span className="rounded-full border border-brand/25 bg-brand/10 px-2.5 py-0.5 text-[11px] font-medium text-slate-100">
+            Overall {e.overall}/10
+          </span>
+          <span className={`rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${RISK_CLASS[e.hallucination_risk] ?? RISK_CLASS.low}`}>
+            Hallucination: {e.hallucination_risk}
+          </span>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 gap-x-4 gap-y-2 sm:grid-cols-2">
+        <MetricBar label="Groundedness" value={e.groundedness} />
+        <MetricBar label="Relevance" value={e.relevance} />
+        <MetricBar label="Personalization" value={e.personalization} />
+        <MetricBar label="Actionability" value={e.actionability} />
+        <MetricBar label="Safety" value={e.safety} />
+      </div>
+      {e.notes ? <p className="mt-3 text-xs text-slate-500">{e.notes}</p> : null}
+    </div>
+  );
+}
 
 type Turn =
   | { role: "user"; content: string }
@@ -188,6 +245,9 @@ function AgentResponseView({ data }: { data: AgentResponse }) {
           </ul>
         </SectionCard>
       ) : null}
+
+      {/* Evaluation scorecard — surfaces the evaluate node (SRS §8) */}
+      {data.evaluation ? <EvaluationView e={data.evaluation} /> : null}
 
       {/* Reflection verdict — surfaces the verify node */}
       <div className="flex flex-wrap items-center gap-2 border-t border-white/10 pt-3 text-xs">

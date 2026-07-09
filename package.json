@@ -13,6 +13,7 @@
     "test:tools-node": "tsx tests/agent-tools-node.test.mts",
     "test:generate": "tsx tests/agent-generate.test.mts",
     "test:persist": "tsx tests/agent-persist.test.mts",
+    "test:evaluate": "tsx tests/agent-evaluate.test.mts",
     "seed:documents": "tsx src/db/seed/documents.ts",
     "seed:agencies": "tsx src/db/seed/agencies.ts"
   },

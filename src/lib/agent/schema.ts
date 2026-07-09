@@ -70,6 +70,24 @@ export type ResponseSections = {
 // Reflection/verification result recorded on the response.
 export type Verification = { grounded: boolean; safe: boolean; notes: string };
 
+// --- Evaluation (SRS §8) ------------------------------------------------------
+// Custom LLM evaluator. Each numeric metric is 0-10; hallucination_risk is
+// categorical. `overall` is computed in code (mean of the five numerics), not by
+// the model, so it is consistent. Stored on ai_recommendations.evaluation_score.
+export const evaluationSchema = z.object({
+  groundedness: z.coerce.number().min(0).max(10),
+  relevance: z.coerce.number().min(0).max(10),
+  personalization: z.coerce.number().min(0).max(10),
+  actionability: z.coerce.number().min(0).max(10),
+  safety: z.coerce.number().min(0).max(10),
+  hallucination_risk: z.enum(["low", "medium", "high"]),
+  notes: z.string(),
+});
+
+export type EvaluationScore = z.infer<typeof evaluationSchema> & {
+  overall: number;
+};
+
 // --- Deterministic gates -----------------------------------------------------
 // Agencies are the SENSITIVE section (SRS: never push consultation the user did
 // not ask for, never invent agencies), so this gate is a hard veto: agencies are
