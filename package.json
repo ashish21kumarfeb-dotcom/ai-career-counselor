@@ -9,10 +9,13 @@
     "lint": "eslint",
     "test:memory": "tsx tests/memory-extraction.test.mts",
     "test:tools": "tsx tests/agent-tools.test.mts",
+    "test:planner": "tsx tests/agent-planner.test.mts",
     "seed:documents": "tsx src/db/seed/documents.ts",
     "seed:agencies": "tsx src/db/seed/agencies.ts"
   },
   "dependencies": {
+    "@langchain/core": "^1.2.2",
+    "@langchain/langgraph": "^1.4.7",
     "@neondatabase/serverless": "^1.1.0",
     "bcryptjs": "^3.0.3",
     "drizzle-orm": "^0.45.2",
