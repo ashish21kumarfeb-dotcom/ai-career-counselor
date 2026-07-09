@@ -27,6 +27,9 @@ export const AgentState = Annotation.Root({
   // Inputs (provided at invoke).
   userId: Annotation<string>(),
   query: Annotation<string>(),
+  // Whether the memory + log nodes write to the DB. Defaults true (the route);
+  // tests invoke with false to avoid writes for a non-existent fake user.
+  persist: Annotation<boolean>({ reducer: lastValue, default: () => true }),
 
   // Derived context.
   intent: Annotation<Intent>({ reducer: lastValue, default: () => "other" }),

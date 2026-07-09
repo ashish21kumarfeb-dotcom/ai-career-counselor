@@ -81,7 +81,7 @@ if (!process.env.GROQ_API_KEY) {
   const FAKE_USER = "00000000-0000-0000-0000-000000000000";
 
   {
-    const out = await agentGraph.invoke({ userId: FAKE_USER, query: "I want to become a data analyst. Suggest roadmap and courses." });
+    const out = await agentGraph.invoke({ userId: FAKE_USER, query: "I want to become a data analyst. Suggest roadmap and courses.", persist: false });
     const s = out.sections!;
     const planned = out.plan!.sections;
     console.log(`  plan: ${JSON.stringify(planned)}`);
@@ -98,7 +98,7 @@ if (!process.env.GROQ_API_KEY) {
   {
     // "counsellor" passes agencyGate but does NOT substring-match any seeded
     // agency's services ("counselling"), and the rest is nonsense -> empty result.
-    const out = await agentGraph.invoke({ userId: FAKE_USER, query: "I need a career counsellor for zzqwxy zzblort." });
+    const out = await agentGraph.invoke({ userId: FAKE_USER, query: "I need a career counsellor for zzqwxy zzblort.", persist: false });
     const s = out.sections!;
     console.log(`  plan: ${JSON.stringify(out.plan!.sections)}  | agencies: ${JSON.stringify(s.agencies)}`);
     if ("agencies" in s) {

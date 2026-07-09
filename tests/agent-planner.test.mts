@@ -68,7 +68,7 @@ if (!process.env.GROQ_API_KEY) {
   const FAKE_USER = "00000000-0000-0000-0000-000000000000"; // read-only; no such user is fine
 
   async function plan(query: string) {
-    const out = await agentGraph.invoke({ userId: FAKE_USER, query });
+    const out = await agentGraph.invoke({ userId: FAKE_USER, query, persist: false });
     const sections = out.plan?.sections ?? [];
     console.log(`\n[${query}]\n  -> ${JSON.stringify(sections)}  (${out.plan?.reasoning ?? ""})`);
     return sections;
