@@ -7,11 +7,19 @@ import type { Intent } from "../ai/intent";
 import type { getProfileByUserId } from "../profile/queries";
 import type { MemoryEntry } from "../memory/queries";
 import type { RetrievedDocument } from "../documents/queries";
+import type { RetrievedAgency } from "../agencies/queries";
 import type { AgentPlan } from "./schema";
 
 // The user_profiles row (or undefined if the user has no profile yet), reused
 // verbatim from the existing query helper without a runtime import.
 export type ProfileRow = Awaited<ReturnType<typeof getProfileByUserId>>;
+
+// Raw tool output. `resources` holds the documents backing BOTH the resources and
+// courses sections (same searchResources tool); the generate node buckets them.
+export type ToolResults = {
+  agencies: RetrievedAgency[];
+  resources: RetrievedDocument[];
+};
 
 const lastValue = <T>(_prev: T, next: T): T => next;
 
@@ -28,6 +36,12 @@ export const AgentState = Annotation.Root({
 
   // Planner output: which sections this query needs (post-gate).
   plan: Annotation<AgentPlan | undefined>({ reducer: lastValue, default: () => undefined }),
+
+  // DB tool output (agency + resource lookups).
+  toolResults: Annotation<ToolResults>({
+    reducer: lastValue,
+    default: () => ({ agencies: [], resources: [] }),
+  }),
 });
 
 export type AgentStateType = typeof AgentState.State;

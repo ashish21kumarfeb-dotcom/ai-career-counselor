@@ -1,11 +1,12 @@
-// The agentic-chat graph (step b skeleton): START -> intent -> context -> planner
-// -> END. Later steps insert tool, generate, verify, memory, and log nodes between
-// planner and END. Compiled once and reused.
+// The agentic-chat graph (step c): START -> intent -> context -> planner -> tools
+// -> END. Later steps insert generate, verify, memory, and log nodes between tools
+// and END. Compiled once and reused.
 import { StateGraph, START, END } from "@langchain/langgraph";
 import { AgentState } from "./state";
 import { intentNode } from "./nodes/intent";
 import { contextNode } from "./nodes/context";
 import { plannerNode } from "./nodes/planner";
+import { toolNode } from "./nodes/tools";
 
 export function buildAgentGraph() {
   // Node names must not collide with state channel names (e.g. "intent").
@@ -13,10 +14,12 @@ export function buildAgentGraph() {
     .addNode("extract_intent", intentNode)
     .addNode("gather_context", contextNode)
     .addNode("planner", plannerNode)
+    .addNode("tools", toolNode)
     .addEdge(START, "extract_intent")
     .addEdge("extract_intent", "gather_context")
     .addEdge("gather_context", "planner")
-    .addEdge("planner", END)
+    .addEdge("planner", "tools")
+    .addEdge("tools", END)
     .compile();
 }
 
