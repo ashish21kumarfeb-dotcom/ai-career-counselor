@@ -13,7 +13,9 @@ export async function contextNode(
   const [profile, memory, ragDocs] = await Promise.all([
     getProfileByUserId(state.userId),
     getMemoryByUserId(state.userId),
-    searchDocuments(state.query),
+    // User-scoped RAG: global curated docs + this user's own docs (e.g. resume),
+    // never another user's.
+    searchDocuments(state.query, state.userId),
   ]);
   return { profile, memory, ragDocs };
 }

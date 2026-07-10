@@ -12,7 +12,7 @@ const ITEMS: NavItem[] = [
   { href: "/chat", icon: "💬", label: "Career Chat" },
   { href: "/dashboard", icon: "📊", label: "Dashboard" },
   { href: "/dashboard/onboarding", icon: "🧑‍💼", label: "Profile" },
-  { href: "#", icon: "📄", label: "Resume", soon: true },
+  { href: "/resume", icon: "📄", label: "Resume" },
 ];
 
 export function SideNav({ email }: { email: string }) {

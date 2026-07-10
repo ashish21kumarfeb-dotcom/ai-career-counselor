@@ -1,0 +1,4 @@
+Jane Doe
+Azure Cloud Developer based in Delhi.
+Skills: C#, .NET, Microsoft Azure, App Service, Azure Functions, SQL, AZ-204 certified.
+Experience: Backend Developer at Acme Corp, deployed to Azure App Service.

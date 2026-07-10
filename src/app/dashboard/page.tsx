@@ -33,8 +33,8 @@ const actions: Action[] = [
   {
     icon: "📄",
     title: "Resume & documents",
-    body: "Upload your resume or paste career notes to sharpen your recommendations.",
-    soon: true,
+    body: "Upload your resume (PDF, DOCX, or TXT) to personalize your recommendations.",
+    href: "/resume",
   },
   {
     icon: "🏢",

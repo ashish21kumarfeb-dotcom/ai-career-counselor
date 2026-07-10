@@ -1,4 +1,4 @@
-import { and, ilike, isNull, or } from "drizzle-orm";
+import { and, eq, ilike, isNull, or } from "drizzle-orm";
 import { db } from "../../db";
 import { documents } from "../../db/schema";
 
@@ -85,7 +85,8 @@ async function retrieve(
   query: string,
   limit: number,
   contextTerms: string[],
-  globalHttpOnly: boolean
+  globalHttpOnly: boolean,
+  ownerId?: string
 ): Promise<RetrievedDocument[]> {
   const keywords = tokenize(query);
   if (keywords.length === 0) return [];
@@ -97,9 +98,15 @@ async function retrieve(
   const specific = new Set(specificArr);
 
   const topicMatch = or(...specificArr.map((w) => ilike(documents.content, `%${w}%`)));
+  // User scoping for RAG grounding: a query may retrieve GLOBAL curated docs plus
+  // the requesting user's OWN documents (e.g. their uploaded resume), but never
+  // another user's documents. With no ownerId, only global docs are visible.
+  const userScope = ownerId
+    ? or(isNull(documents.userId), eq(documents.userId, ownerId))
+    : isNull(documents.userId);
   const where = globalHttpOnly
     ? and(isNull(documents.userId), ilike(documents.sourceUrl, "http%"), topicMatch)
-    : topicMatch;
+    : and(userScope, topicMatch);
 
   // Fetch a candidate pool, then rank in code and take the top `limit`.
   const candidates = await db
@@ -132,16 +139,18 @@ async function retrieve(
     .map((x) => x.r);
 }
 
-// RAG grounding retrieval. Relevance-ranked; matches any document (curated or
-// user-owned — user_id scoping is a separate deferred fix). Returns [] when no
-// specific topic term matches, so the caller answers ungrounded rather than
-// citing something irrelevant.
+// RAG grounding retrieval. Relevance-ranked and USER-SCOPED: returns global
+// curated docs plus the requesting user's own documents (e.g. their resume),
+// never another user's. Pass the current user's id; omit it to retrieve only
+// global docs. Returns [] when no specific topic term matches, so the caller
+// answers ungrounded rather than citing something irrelevant.
 export async function searchDocuments(
   query: string,
+  userId?: string,
   limit = 3,
   contextTerms: string[] = []
 ): Promise<RetrievedDocument[]> {
-  return retrieve(query, limit, contextTerms, false);
+  return retrieve(query, limit, contextTerms, false, userId);
 }
 
 // Resource/course-link search tool. Returns ONLY curated, linkable resources:
