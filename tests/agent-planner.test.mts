@@ -20,11 +20,11 @@ function check(name: string, cond: boolean, detail = "") {
 }
 
 const allTrue: PlannerNeeds = {
-  needs: { aiSuggestion: true, roadmap: true, resources: true, courses: true, agencies: true, nextSteps: true },
+  needs: { aiSuggestion: true, roadmap: true, resources: true, courses: true, skillFocus: true, agencies: true, nextSteps: true },
   reasoning: "test",
 };
 const allFalse: PlannerNeeds = {
-  needs: { aiSuggestion: false, roadmap: false, resources: false, courses: false, agencies: false, nextSteps: false },
+  needs: { aiSuggestion: false, roadmap: false, resources: false, courses: false, skillFocus: false, agencies: false, nextSteps: false },
   reasoning: "test",
 };
 
@@ -57,7 +57,7 @@ console.log("\n== A. Unit: finalizePlan gating ==");
 }
 {
   const p = finalizePlan(allTrue, "I want to become a data analyst. Suggest roadmap and courses.");
-  check("stable section order", JSON.stringify(p.sections) === JSON.stringify(["ai_suggestion","roadmap","resources","courses","agencies","next_steps"].filter((s) => p.sections.includes(s as never))), JSON.stringify(p.sections));
+  check("stable section order", JSON.stringify(p.sections) === JSON.stringify(["ai_suggestion","roadmap","resources","courses","skill_focus","agencies","next_steps"].filter((s) => p.sections.includes(s as never))), JSON.stringify(p.sections));
 }
 
 // ---------------------------------------------------------------------------

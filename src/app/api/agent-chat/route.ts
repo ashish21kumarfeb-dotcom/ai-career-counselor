@@ -3,11 +3,11 @@ import { getSession } from "../../../lib/auth/session";
 import { chatSchema } from "../../../lib/chat/validation";
 import { agentGraph } from "../../../lib/agent/graph";
 
-// Experimental agentic chat route (POC). Runs the LangGraph workflow:
+// The Career Chat route. Runs the LangGraph workflow:
 // intent -> context (profile + memory + RAG) -> planner -> tools (DB-only agency
-// + resource search) -> generate -> verify -> memory update -> log. Returns a
-// DYNAMIC sectioned response — only the sections the planner deemed relevant.
-// Separate from the stable /api/chat; reuses its auth + validation.
+// + resource search) -> generate -> verify -> evaluate -> memory update -> log.
+// Returns a DYNAMIC sectioned response — only the sections the planner deemed
+// relevant.
 export async function POST(request: Request) {
   const session = await getSession();
   if (!session) {

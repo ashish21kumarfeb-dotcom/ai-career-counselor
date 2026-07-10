@@ -28,6 +28,7 @@ export async function verifyNode(
   const draft = {
     ai_suggestion: s?.ai_suggestion,
     roadmap: s?.roadmap,
+    skill_focus: s?.skill_focus,
     next_steps: s?.next_steps,
   };
   // Give the verifier the actual available source identifiers (not just counts) so

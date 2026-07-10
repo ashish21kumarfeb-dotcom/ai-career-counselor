@@ -1,6 +1,7 @@
 // Context node: reuses the existing profile / memory / RAG helpers, run in
-// parallel (all independent). Mirrors how /api/chat loads context, but as a graph
-// node. Reads are safe for an unknown userId (profile -> undefined, memory -> []).
+// parallel (all independent) — the context-loading step of the chat pipeline, as
+// a graph node. Reads are safe for an unknown userId (profile -> undefined,
+// memory -> []).
 import { getProfileByUserId } from "../../profile/queries";
 import { getMemoryByUserId } from "../../memory/queries";
 import { searchDocuments } from "../../documents/queries";

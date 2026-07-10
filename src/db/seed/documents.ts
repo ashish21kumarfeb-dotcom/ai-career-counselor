@@ -89,6 +89,49 @@ const RESOURCE_DOCUMENTS = [
     content:
       "MDN Learn Web Development: structured, reputable learning guides and resources for HTML, CSS, and JavaScript fundamentals for aspiring web developers.",
   },
+  // Azure / .NET / cloud resources and certifications (real Microsoft Learn URLs).
+  {
+    type: "career_data" as const,
+    sourceUrl: "https://learn.microsoft.com/en-us/credentials/certifications/azure-fundamentals/",
+    content:
+      "Microsoft Azure Fundamentals (AZ-900) certification: a beginner course and certification covering core Azure cloud concepts, services, security, pricing, and support — the recommended starting point for learning Azure.",
+  },
+  {
+    type: "career_data" as const,
+    sourceUrl: "https://learn.microsoft.com/en-us/credentials/certifications/azure-developer/",
+    content:
+      "Microsoft Azure Developer Associate (AZ-204) certification: a course and certification for developers building cloud apps on Azure — App Service, Azure Functions, storage, Cosmos DB, and securing and monitoring solutions. Strong for .NET developers moving to Azure.",
+  },
+  {
+    type: "industry_article" as const,
+    sourceUrl: "https://learn.microsoft.com/en-us/azure/",
+    content:
+      "Microsoft Learn Azure documentation: official, reputable learning resources and guides for Azure cloud services, tutorials, and architecture across compute, storage, networking, and databases.",
+  },
+  {
+    type: "industry_article" as const,
+    sourceUrl: "https://learn.microsoft.com/en-us/azure/app-service/",
+    content:
+      "Azure App Service documentation: guides and resources for hosting and deploying web apps and APIs on Azure App Service, including .NET, and continuous deployment.",
+  },
+  {
+    type: "industry_article" as const,
+    sourceUrl: "https://learn.microsoft.com/en-us/azure/azure-functions/",
+    content:
+      "Azure Functions documentation: learning resources for building serverless functions and event-driven cloud apps on Azure, with .NET, triggers, and bindings.",
+  },
+  {
+    type: "industry_article" as const,
+    sourceUrl: "https://learn.microsoft.com/en-us/azure/azure-sql/",
+    content:
+      "Azure SQL documentation: resources and guides for Azure SQL Database and managed SQL cloud databases — provisioning, querying, security, and performance on Azure.",
+  },
+  {
+    type: "industry_article" as const,
+    sourceUrl: "https://learn.microsoft.com/en-us/dotnet/azure/",
+    content:
+      ".NET on Azure documentation: official resources for building, deploying, and scaling .NET applications on Azure, including App Service, Functions, and Azure SDK for .NET.",
+  },
 ];
 
 async function seed() {

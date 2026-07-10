@@ -92,6 +92,11 @@ if (!process.env.GROQ_API_KEY) {
     const resItems = [...(s.resources?.items ?? []), ...(s.courses?.items ?? [])];
     check("resource/course items are real http links (not invented)", resItems.length > 0 && resItems.every((i) => (i.url ?? "").startsWith("http")), JSON.stringify(resItems.map((i) => i.url)));
     check("no agencies section (not asked)", !("agencies" in s));
+    if ("skill_focus" in s) {
+      check("skill_focus is a non-empty string array", Array.isArray(s.skill_focus) && s.skill_focus.length > 0 && s.skill_focus.every((x) => typeof x === "string"), JSON.stringify(s.skill_focus));
+    } else {
+      check("skill_focus section (skipped: planner did not request it)", true);
+    }
     check("verification recorded with booleans", typeof out.verification?.grounded === "boolean" && typeof out.verification?.safe === "boolean", JSON.stringify(out.verification));
   }
 

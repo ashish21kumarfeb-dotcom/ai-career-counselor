@@ -14,6 +14,7 @@
     "test:generate": "tsx tests/agent-generate.test.mts",
     "test:persist": "tsx tests/agent-persist.test.mts",
     "test:evaluate": "tsx tests/agent-evaluate.test.mts",
+    "test:retrieval": "tsx tests/retrieval-relevance.test.mts",
     "seed:documents": "tsx src/db/seed/documents.ts",
     "seed:agencies": "tsx src/db/seed/agencies.ts"
   },

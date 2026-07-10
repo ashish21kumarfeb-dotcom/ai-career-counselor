@@ -27,14 +27,8 @@ const actions: Action[] = [
   {
     icon: "💬",
     title: "Career Chat",
-    body: "Ask anything about your next move and get personalized, source-backed guidance.",
-    href: "/chat",
-  },
-  {
-    icon: "✨",
-    title: "AI Agent Chat",
     body: "A multi-step agent that plans your answer — suggestions, roadmaps, courses, and verified agencies, only when your question needs them.",
-    href: "/agent-chat",
+    href: "/chat",
   },
   {
     icon: "📄",

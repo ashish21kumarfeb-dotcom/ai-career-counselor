@@ -10,6 +10,7 @@ export const SECTIONS = [
   "roadmap",
   "resources",
   "courses",
+  "skill_focus",
   "agencies",
   "next_steps",
 ] as const;
@@ -24,6 +25,7 @@ export const plannerNeedsSchema = z.object({
     roadmap: z.boolean(),
     resources: z.boolean(),
     courses: z.boolean(),
+    skillFocus: z.boolean(),
     agencies: z.boolean(),
     nextSteps: z.boolean(),
   }),
@@ -63,6 +65,9 @@ export type ResponseSections = {
   roadmap?: { items: string[]; suggested: boolean };
   resources?: Sourced<ResourceItem>;
   courses?: Sourced<ResourceItem>;
+  // Skills the user should focus on / close the gap on, derived from their
+  // profile skills vs. their goal. LLM-generated guidance (not verified data).
+  skill_focus?: string[];
   agencies?: Sourced<AgencyItem>;
   next_steps?: string[];
 };
@@ -125,6 +130,9 @@ export function finalizePlan(
   if (needs.roadmap) sections.push("roadmap");
   if (needs.resources && resourceGate(query)) sections.push("resources");
   if (needs.courses && resourceGate(query)) sections.push("courses");
+  // skill_focus is benign guidance; gate it like resources (learning/career
+  // queries) so it does not appear on pure agency lookups or off-topic asks.
+  if (needs.skillFocus && resourceGate(query)) sections.push("skill_focus");
   if (needs.agencies && agencyGate(query)) sections.push("agencies");
   if (needs.nextSteps) sections.push("next_steps");
 

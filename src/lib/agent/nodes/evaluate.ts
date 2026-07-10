@@ -33,6 +33,7 @@ export async function evaluateNode(
     roadmap: s.roadmap,
     resources: s.resources,
     courses: s.courses,
+    skill_focus: s.skill_focus,
     agencies: s.agencies,
     next_steps: s.next_steps,
   };

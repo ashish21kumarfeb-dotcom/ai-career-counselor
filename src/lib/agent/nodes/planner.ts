@@ -20,16 +20,17 @@ Sections you may enable (set true/false under "needs"):
 - roadmap: a step-by-step plan or learning path.
 - resources: curated learning resource or article links.
 - courses: course or certification links.
+- skillFocus: the specific skills the user should focus on or close the gap on.
 - agencies: career counselling / consulting / mentoring agencies.
 - nextSteps: a few concrete immediate next actions.
 
 Rules:
 - Enable "agencies" ONLY if the user asks for help from a human provider — a counsellor, consultant, mentor, coach, agency, or guidance provider. Never enable it just because the user asks a career question.
-- Enable "resources"/"courses" ONLY if the user asks about learning, a roadmap, skills, courses, certification, or preparation (or clearly implies it, e.g. switching into a new field).
+- Enable "resources"/"courses"/"skillFocus" ONLY if the user asks about learning, a roadmap, skills, courses, certification, or preparation (or clearly implies it, e.g. switching into a new field).
 - Most simple questions need only "aiSuggestion", sometimes with "roadmap".
 
 Respond ONLY with a JSON object of this exact shape:
-{"needs":{"aiSuggestion":bool,"roadmap":bool,"resources":bool,"courses":bool,"agencies":bool,"nextSteps":bool},"reasoning":"one short sentence"}`;
+{"needs":{"aiSuggestion":bool,"roadmap":bool,"resources":bool,"courses":bool,"skillFocus":bool,"agencies":bool,"nextSteps":bool},"reasoning":"one short sentence"}`;
 
 // Gate-safe fallback used when the LLM call or its output fails validation.
 function fallbackNeeds(query: string): PlannerNeeds {
@@ -39,6 +40,7 @@ function fallbackNeeds(query: string): PlannerNeeds {
       roadmap: /\b(roadmap|plan|steps|how (?:do|to)|become|switch|transition)\b/i.test(query),
       resources: resourceGate(query),
       courses: /\b(course\w*|certif\w*|training)\b/i.test(query),
+      skillFocus: /\b(skill\w*|learn\w*|roadmap|become|switch|transition|prepar\w*|gap)\b/i.test(query),
       agencies: agencyGate(query),
       nextSteps: false,
     },

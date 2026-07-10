@@ -3,7 +3,7 @@ import { aiRecommendations } from "../../db/schema";
 
 // Data-access helper for logging a chat turn to `ai_recommendations`. `intent`,
 // `sourcesUsed`, and `evaluationScore` are optional and omitted -> null. The
-// agentic chat passes evaluationScore (SRS §8); /api/chat omits it (stays null).
+// The agentic chat passes evaluationScore (SRS §8); callers may omit it (null).
 export async function logRecommendation(input: {
   userId: string;
   query: string;
