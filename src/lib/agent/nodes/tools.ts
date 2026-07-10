@@ -19,6 +19,17 @@ export async function toolNode(
     (sections.includes("resources") || sections.includes("courses")) &&
     resourceGate(query);
 
+  // Profile-derived terms nudge resource RANKING toward the user's field/goal —
+  // they never grant inclusion on their own (relevance is decided by the query's
+  // specific topic terms), so an off-topic query never pulls the profile's topic.
+  const p = state.profile;
+  const contextTerms = p
+    ? `${p.skills ?? ""} ${p.interests ?? ""} ${p.careerGoal ?? ""} ${p.currentRole ?? ""}`
+        .toLowerCase()
+        .split(/[^a-z0-9]+/)
+        .filter((w) => w.length >= 3)
+    : [];
+
   const [agencies, resources] = await Promise.all([
     wantsAgencies
       ? searchAgencies(query).catch((e) => {
@@ -27,7 +38,7 @@ export async function toolNode(
         })
       : Promise.resolve([]),
     wantsResources
-      ? searchResources(query).catch((e) => {
+      ? searchResources(query, 5, contextTerms).catch((e) => {
           console.error("searchResources failed:", e);
           return [];
         })
