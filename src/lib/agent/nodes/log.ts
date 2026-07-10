@@ -30,6 +30,7 @@ export async function logNode(
       finalAnswer: JSON.stringify(state.sections ?? {}),
       intent: state.intent,
       sourcesUsed: sourcesUsed.length > 0 ? sourcesUsed : undefined,
+      evaluationScore: state.evaluation,
     });
   } catch (error) {
     console.error("Agent ai_recommendations logging failed:", error);

@@ -1,15 +1,16 @@
 import { db } from "../../db";
 import { aiRecommendations } from "../../db/schema";
 
-// Data-access helper for logging a chat turn to `ai_recommendations`. Writes the
-// columns available for the current slice; evaluation_score is left null for a
-// later phase. `intent` and `sourcesUsed` are optional and omitted -> null.
+// Data-access helper for logging a chat turn to `ai_recommendations`. `intent`,
+// `sourcesUsed`, and `evaluationScore` are optional and omitted -> null. The
+// agentic chat passes evaluationScore (SRS §8); /api/chat omits it (stays null).
 export async function logRecommendation(input: {
   userId: string;
   query: string;
   finalAnswer: string;
   intent?: string;
   sourcesUsed?: Array<{ id: string; type: string; sourceUrl: string | null }>;
+  evaluationScore?: unknown;
 }) {
   const rows = await db
     .insert(aiRecommendations)
@@ -19,6 +20,7 @@ export async function logRecommendation(input: {
       finalAnswer: input.finalAnswer,
       intent: input.intent,
       sourcesUsed: input.sourcesUsed,
+      evaluationScore: input.evaluationScore,
     })
     .returning({ id: aiRecommendations.id });
 

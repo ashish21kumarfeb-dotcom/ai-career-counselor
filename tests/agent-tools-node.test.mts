@@ -39,6 +39,7 @@ function makeState(query: string, sections: SectionName[]): AgentStateType {
     toolResults: { agencies: [], resources: [] },
     sections: undefined,
     verification: undefined,
+    evaluation: undefined,
   };
 }
 

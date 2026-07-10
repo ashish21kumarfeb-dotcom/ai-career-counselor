@@ -8,7 +8,7 @@ import type { getProfileByUserId } from "../profile/queries";
 import type { MemoryEntry } from "../memory/queries";
 import type { RetrievedDocument } from "../documents/queries";
 import type { RetrievedAgency } from "../agencies/queries";
-import type { AgentPlan, ResponseSections, Verification } from "./schema";
+import type { AgentPlan, ResponseSections, Verification, EvaluationScore } from "./schema";
 
 // The user_profiles row (or undefined if the user has no profile yet), reused
 // verbatim from the existing query helper without a runtime import.
@@ -49,6 +49,9 @@ export const AgentState = Annotation.Root({
   // Generated dynamic response (only the planned sections) + reflection result.
   sections: Annotation<ResponseSections | undefined>({ reducer: lastValue, default: () => undefined }),
   verification: Annotation<Verification | undefined>({ reducer: lastValue, default: () => undefined }),
+
+  // Custom-evaluator score (SRS §8), stored on ai_recommendations.
+  evaluation: Annotation<EvaluationScore | undefined>({ reducer: lastValue, default: () => undefined }),
 });
 
 export type AgentStateType = typeof AgentState.State;
