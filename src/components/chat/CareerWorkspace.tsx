@@ -8,8 +8,9 @@ import type { AgentResponse, Turn } from "./types";
 
 // The Career Chat workspace. Starts as a simple centered chat (intro + chips +
 // input). After the first successful agent response it transitions into a split
-// layout: the conversation stays on the left, and a dynamic Career Navigator
-// panel on the right renders the structured sections of the LATEST response.
+// layout: the conversation on the left, and a dynamic Career Navigator panel on
+// the right that shows one section at a time (tabs). The navigator can expand to
+// cover the chat area; "New chat" resets back to the initial simple state.
 
 export function CareerWorkspace() {
   const router = useRouter();
@@ -17,6 +18,7 @@ export function CareerWorkspace() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
 
   // The most recent assistant response drives the navigator panel.
   const latest = useMemo<AgentResponse | null>(() => {
@@ -26,6 +28,13 @@ export function CareerWorkspace() {
     }
     return null;
   }, [turns]);
+
+  // Number of assistant responses so far — used to remount the navigator on each
+  // new response so its selected tab resets to Overview.
+  const responseCount = useMemo(
+    () => turns.reduce((n, t) => (t.role === "assistant" ? n + 1 : n), 0),
+    [turns]
+  );
 
   async function send(text: string) {
     const trimmed = text.trim();
@@ -62,6 +71,14 @@ export function CareerWorkspace() {
     }
   }
 
+  // New chat: clear the conversation and navigator, return to the initial state.
+  function startNewChat() {
+    setTurns([]);
+    setMessage("");
+    setError(null);
+    setExpanded(false);
+  }
+
   const hasResponse = latest !== null;
 
   const chat = (
@@ -75,35 +92,56 @@ export function CareerWorkspace() {
     />
   );
 
+  const navigator = latest ? (
+    <CareerNavigator
+      key={responseCount}
+      data={latest}
+      expanded={expanded}
+      onToggleExpand={() => setExpanded((e) => !e)}
+    />
+  ) : null;
+
   return (
     <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col px-4 pt-6 pb-6 sm:px-6">
       {/* Header */}
-      <section className="mb-5">
-        <span className="glass mb-3 inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-xs font-medium text-heading">
-          <span className="h-1.5 w-1.5 rounded-full bg-accent shadow-[0_0_10px_2px_rgba(86,197,150,0.7)]" aria-hidden />
-          Career Chat
-        </span>
-        <h1 className="text-2xl font-bold tracking-tight text-heading sm:text-3xl">
-          {hasResponse ? "Your career workspace" : "Ask, and the agent plans the answer"}
-        </h1>
-        {!hasResponse ? (
-          <p className="mt-2 max-w-xl text-slate-300">
-            A multi-step workflow: it detects intent, pulls your profile and memory, searches verified data, then builds a Career Navigator with only the sections your question needs.
-          </p>
+      <section className="mb-5 flex items-start justify-between gap-3">
+        <div>
+          <span className="glass mb-3 inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-xs font-medium text-heading">
+            <span className="h-1.5 w-1.5 rounded-full bg-accent shadow-[0_0_10px_2px_rgba(86,197,150,0.7)]" aria-hidden />
+            Career Chat
+          </span>
+          <h1 className="text-2xl font-bold tracking-tight text-heading sm:text-3xl">
+            {hasResponse ? "Your career workspace" : "Ask, and the agent plans the answer"}
+          </h1>
+          {!hasResponse ? (
+            <p className="mt-2 max-w-xl text-slate-300">
+              A multi-step workflow: it detects intent, pulls your profile and memory, searches verified data, then builds a Career Navigator with only the sections your question needs.
+            </p>
+          ) : null}
+        </div>
+        {turns.length > 0 ? (
+          <button
+            type="button"
+            onClick={startNewChat}
+            className="btn-ghost inline-flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium"
+          >
+            <span aria-hidden>＋</span> New chat
+          </button>
         ) : null}
       </section>
 
-      {hasResponse ? (
+      {!hasResponse ? (
+        // Initial simple chat: single centered column.
+        <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col">{chat}</div>
+      ) : expanded ? (
+        // Expanded: navigator covers the chat area (sidebar stays; it's outside).
+        <div className="flex-1">{navigator}</div>
+      ) : (
         // Split workspace: chat left, navigator right (stacks on smaller screens).
         <div className="grid flex-1 grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
           <div className="flex min-w-0 flex-col">{chat}</div>
-          <div className="min-w-0">
-            <CareerNavigator data={latest} />
-          </div>
+          <div className="min-w-0">{navigator}</div>
         </div>
-      ) : (
-        // Initial simple chat: single centered column.
-        <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col">{chat}</div>
       )}
     </main>
   );
