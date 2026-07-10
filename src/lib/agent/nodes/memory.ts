@@ -1,7 +1,7 @@
 // Memory node (SRS memory update): reuses the existing fixed-key extractor +
-// upsert to persist durable facts from the USER's message. Same behavior as
-// /api/chat's memory write. Fault-tolerant and never blocks the response; skipped
-// entirely when state.persist is false (tests / dry runs).
+// upsert to persist durable facts from the USER's message. Fault-tolerant and
+// never blocks the response; skipped entirely when state.persist is false
+// (tests / dry runs).
 import { extractMemories } from "../../ai/memory";
 import { upsertMemory } from "../../memory/queries";
 import type { AgentStateType } from "../state";

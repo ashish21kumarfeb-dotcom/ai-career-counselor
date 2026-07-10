@@ -3,8 +3,11 @@ import { redirect } from "next/navigation";
 import { getSession } from "../../lib/auth/session";
 import { getProfileByUserId } from "../../lib/profile/queries";
 import { SignOutButton } from "../../components/auth/SignOutButton";
-import { ChatClient } from "../../components/chat/ChatClient";
+import { AgentChatClient } from "../../components/chat/AgentChatClient";
 
+// Career Chat — the single chat surface. Consumes /api/agent-chat (the LangGraph
+// workflow) and renders the dynamic sectioned response. Gated on auth + profile
+// like the dashboard.
 export default async function ChatPage() {
   const session = await getSession();
   if (!session) {
@@ -42,11 +45,14 @@ export default async function ChatPage() {
             Career Chat
           </span>
           <h1 className="text-2xl font-bold tracking-tight text-heading sm:text-3xl">
-            Let&apos;s talk about your career
+            Ask, and the agent plans the answer
           </h1>
+          <p className="mt-2 max-w-xl text-slate-300">
+            A multi-step workflow: it detects intent, pulls your profile and memory, searches verified data, then returns only the sections your question needs.
+          </p>
         </section>
 
-        <ChatClient />
+        <AgentChatClient />
       </main>
     </div>
   );

@@ -4,9 +4,9 @@
 //      tool results — the LLM never writes these. Empty -> an explicit "no verified
 //      data found" note.
 //   2) Text sections (ai_suggestion, roadmap, next_steps) are LLM-generated but
-//      GROUNDED in profile + memory + RAG + the retrieved resources, under the same
-//      safety rules as /api/chat. A roadmap not backed by a verified resource is
-//      flagged suggested:true (framed as general guidance, not verified data).
+//      GROUNDED in profile + memory + RAG + the retrieved resources, under the
+//      shared BASE_PROMPT safety rules. A roadmap not backed by a verified
+//      resource is flagged suggested:true (framed as general guidance, not data).
 // Fault-tolerant: on any LLM/parse failure the DB sections still return.
 import { z } from "zod";
 import { getGroq, CHAT_MODEL } from "../../ai/client";
