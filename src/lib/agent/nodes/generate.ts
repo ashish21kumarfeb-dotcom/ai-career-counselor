@@ -109,6 +109,7 @@ export function buildDbSections(
 const textSchema = z.object({
   ai_suggestion: z.string().optional(),
   roadmap: z.array(z.string()).optional(),
+  skill_focus: z.array(z.string()).optional(),
   next_steps: z.array(z.string()).optional(),
 });
 type TextSections = z.infer<typeof textSchema>;
@@ -158,6 +159,7 @@ async function generateText(
 You are generating a STRUCTURED response. Respond with a single JSON object containing ONLY these keys: ${keys}.
 - ai_suggestion: a concise, personalized answer/recommendation grounded in the context.
 - roadmap: an array of short ordered step strings. ${roadmapRule}
+- skill_focus: an array of a few specific skills the user should focus on or close the gap on, informed by their profile skills vs. their goal. Each item is a short skill name with a brief qualifier (e.g. "SQL (joins, aggregation)").
 - next_steps: an array of a few concrete immediate actions.
 Grounding rules: use ONLY the provided context for facts. Do NOT invent agencies, courses, links, companies, salaries, or statistics. Do NOT reference any agency or link not listed in the context. Separate opinion from fact; never guarantee jobs, interviews, or salaries.`;
 
@@ -192,7 +194,7 @@ export async function generateNode(
   const db = buildDbSections(planned, state.toolResults.agencies, state.toolResults.resources);
 
   // 2) LLM text sections (only the requested ones).
-  const TEXT_SECTIONS: SectionName[] = ["ai_suggestion", "roadmap", "next_steps"];
+  const TEXT_SECTIONS: SectionName[] = ["ai_suggestion", "roadmap", "skill_focus", "next_steps"];
   const wantText = planned.filter((s) => TEXT_SECTIONS.includes(s));
   const hasVerifiedResources = state.toolResults.resources.length > 0;
   let text: TextSections = {};
@@ -210,6 +212,7 @@ export async function generateNode(
   if (planned.includes("roadmap")) out.roadmap = { items: text.roadmap ?? [], suggested: !hasVerifiedResources };
   if (planned.includes("resources")) out.resources = db.resources ?? { items: [], note: "No verified resources found for this query." };
   if (planned.includes("courses")) out.courses = db.courses ?? { items: [], note: "No verified courses found for this query." };
+  if (planned.includes("skill_focus")) out.skill_focus = text.skill_focus ?? [];
   if (planned.includes("agencies")) out.agencies = db.agencies ?? { items: [], note: "No verified agencies found for this query." };
   if (planned.includes("next_steps")) out.next_steps = text.next_steps ?? [];
 
