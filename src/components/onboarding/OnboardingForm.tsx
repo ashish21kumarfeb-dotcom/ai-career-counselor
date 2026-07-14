@@ -5,83 +5,64 @@ import { useRouter } from "next/navigation";
 import { SubmitButton } from "../auth/SubmitButton";
 import {
   OnboardingChoiceCards,
+  OnboardingInlineChoice,
   OnboardingText,
   OnboardingTextarea,
   type ChoiceOption,
 } from "./OnboardingField";
+import {
+  ONBOARDING_FIELDS,
+  USER_TYPE_CARDS,
+  type OfferedUserType,
+} from "../../lib/profile/fields";
 
-const USER_TYPE_OPTIONS: ChoiceOption[] = [
-  {
-    value: "student",
-    title: "Student",
-    description: "Still studying and exploring where to head next.",
-    emoji: "🎓",
-  },
-  {
-    value: "fresher",
-    title: "Fresher",
-    description: "Recently graduated and ready to start out.",
-    emoji: "🌱",
-  },
-  {
-    value: "working_professional",
-    title: "Working professional",
-    description: "Employed and growing in my current field.",
-    emoji: "💼",
-  },
-  {
-    value: "job_switcher",
-    title: "Job switcher",
-    description: "Looking to move into a different career.",
-    emoji: "🧭",
-  },
-];
+// Step-1 cards come straight from the shared config (same source the API and
+// mapper use), so the offered types can't drift between UI and server.
+const USER_TYPE_OPTIONS: ChoiceOption[] = USER_TYPE_CARDS.map((c) => ({
+  value: c.value,
+  title: c.title,
+  description: c.description,
+  emoji: c.emoji,
+}));
 
-const STEPS = ["You", "Background", "Goals"] as const;
-
-type FieldErrors = Partial<
-  Record<
-    | "userType"
-    | "education"
-    | "currentRole"
-    | "skills"
-    | "interests"
-    | "careerGoal"
-    | "location",
-    string
-  >
->;
+const STEPS = ["You", "Details"] as const;
 
 export function OnboardingForm() {
   const router = useRouter();
   const [step, setStep] = useState(0);
 
-  const [userType, setUserType] = useState<string | null>(null);
-  const [education, setEducation] = useState("");
-  const [currentRole, setCurrentRole] = useState("");
-  const [location, setLocation] = useState("");
-  const [skills, setSkills] = useState("");
-  const [interests, setInterests] = useState("");
-  const [careerGoal, setCareerGoal] = useState("");
+  const [userType, setUserType] = useState<OfferedUserType | null>(null);
+  // Dynamic per-type answers, keyed by field.key. Reset when the type changes.
+  const [answers, setAnswers] = useState<Record<string, string>>({});
 
-  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const [userTypeError, setUserTypeError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const isLastStep = step === STEPS.length - 1;
+  const fields = userType ? ONBOARDING_FIELDS[userType] : [];
+
+  function selectUserType(value: string) {
+    const next = value as OfferedUserType;
+    setUserType(next);
+    setAnswers({}); // field set differs per type — start clean
+    setUserTypeError(null);
+  }
+
+  function setAnswer(key: string, value: string) {
+    setAnswers((prev) => ({ ...prev, [key]: value }));
+  }
 
   function goNext() {
-    // Only the first step gates progress — user_type is the one required field.
     if (step === 0 && !userType) {
-      setFieldErrors({ userType: "Please choose where you are right now" });
+      setUserTypeError("Please choose where you are right now");
       return;
     }
-    setFieldErrors({});
+    setFormError(null);
     setStep((s) => Math.min(s + 1, STEPS.length - 1));
   }
 
   function goBack() {
-    setFieldErrors({});
     setFormError(null);
     setStep((s) => Math.max(s - 1, 0));
   }
@@ -95,11 +76,10 @@ export function OnboardingForm() {
 
     if (!userType) {
       setStep(0);
-      setFieldErrors({ userType: "Please choose where you are right now" });
+      setUserTypeError("Please choose where you are right now");
       return;
     }
 
-    setFieldErrors({});
     setFormError(null);
     setLoading(true);
 
@@ -107,15 +87,7 @@ export function OnboardingForm() {
       const res = await fetch("/api/profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userType,
-          education,
-          currentRole,
-          location,
-          skills,
-          interests,
-          careerGoal,
-        }),
+        body: JSON.stringify({ userType, answers }),
       });
 
       if (res.status === 200) {
@@ -130,27 +102,7 @@ export function OnboardingForm() {
       }
 
       const data = await res.json().catch(() => ({}));
-
-      if (res.status === 400 && data.fieldErrors) {
-        const fe: FieldErrors = {};
-        for (const key of [
-          "userType",
-          "education",
-          "currentRole",
-          "skills",
-          "interests",
-          "careerGoal",
-          "location",
-        ] as const) {
-          const message = data.fieldErrors[key]?.[0];
-          if (message) fe[key] = message;
-        }
-        setFieldErrors(fe);
-        // Surface the required-field error on its own step.
-        if (fe.userType) setStep(0);
-      } else {
-        setFormError(data.error ?? "Something went wrong");
-      }
+      setFormError(data.error ?? "Something went wrong");
     } catch {
       setFormError("Network error. Please try again.");
     } finally {
@@ -203,85 +155,61 @@ export function OnboardingForm() {
           <OnboardingChoiceCards
             options={USER_TYPE_OPTIONS}
             value={userType}
-            onChange={(v) => {
-              setUserType(v);
-              setFieldErrors((prev) => ({ ...prev, userType: undefined }));
-            }}
-            error={fieldErrors.userType}
+            onChange={selectUserType}
+            error={userTypeError ?? undefined}
           />
         </div>
       ) : null}
 
-      {/* Step 2 — background */}
+      {/* Step 2 — dynamic fields for the selected type */}
       {step === 1 ? (
         <div className="flex flex-col gap-4">
           <div>
-            <h2 className="text-lg font-semibold text-heading">Tell us about you</h2>
+            <h2 className="text-lg font-semibold text-heading">Tell us more</h2>
             <p className="mt-1 text-sm text-slate-400">
               All optional — share whatever feels relevant.
             </p>
           </div>
-          <OnboardingText
-            id="education"
-            label="Education"
-            placeholder="e.g. B.Com, final year"
-            value={education}
-            onChange={setEducation}
-            error={fieldErrors.education}
-          />
-          <OnboardingText
-            id="currentRole"
-            label="Current role"
-            placeholder="e.g. Sales associate (or leave blank)"
-            value={currentRole}
-            onChange={setCurrentRole}
-            error={fieldErrors.currentRole}
-          />
-          <OnboardingText
-            id="location"
-            label="Location"
-            placeholder="e.g. Delhi, India"
-            value={location}
-            onChange={setLocation}
-            error={fieldErrors.location}
-          />
-        </div>
-      ) : null}
-
-      {/* Step 3 — skills & goals */}
-      {step === 2 ? (
-        <div className="flex flex-col gap-4">
-          <div>
-            <h2 className="text-lg font-semibold text-heading">Skills & goals</h2>
-            <p className="mt-1 text-sm text-slate-400">
-              The more you share, the more personalized your guidance.
-            </p>
-          </div>
-          <OnboardingTextarea
-            id="skills"
-            label="Skills"
-            hint="Comma-separated is fine."
-            placeholder="e.g. communication, Excel, basic SQL"
-            value={skills}
-            onChange={setSkills}
-            error={fieldErrors.skills}
-          />
-          <OnboardingTextarea
-            id="interests"
-            label="Interests"
-            placeholder="e.g. data, marketing, working with people"
-            value={interests}
-            onChange={setInterests}
-            error={fieldErrors.interests}
-          />
-          <OnboardingTextarea
-            id="careerGoal"
-            label="Career goal"
-            placeholder="e.g. Move into business analytics within a year"
-            value={careerGoal}
-            onChange={setCareerGoal}
-            error={fieldErrors.careerGoal}
-          />
+          {fields.map((field) => {
+            const value = answers[field.key] ?? "";
+            if (field.kind === "choice") {
+              return (
+                <OnboardingInlineChoice
+                  key={field.key}
+                  id={field.key}
+                  label={field.label}
+                  hint={field.hint}
+                  options={field.options ?? []}
+                  value={answers[field.key] ?? null}
+                  onChange={(v) => setAnswer(field.key, v)}
+                />
+              );
+            }
+            if (field.kind === "textarea") {
+              return (
+                <OnboardingTextarea
+                  key={field.key}
+                  id={field.key}
+                  label={field.label}
+                  hint={field.hint}
+                  placeholder={field.placeholder}
+                  value={value}
+                  onChange={(v) => setAnswer(field.key, v)}
+                />
+              );
+            }
+            return (
+              <OnboardingText
+                key={field.key}
+                id={field.key}
+                label={field.label}
+                hint={field.hint}
+                placeholder={field.placeholder}
+                value={value}
+                onChange={(v) => setAnswer(field.key, v)}
+              />
+            );
+          })}
         </div>
       ) : null}
 
@@ -298,7 +226,7 @@ export function OnboardingForm() {
         ) : null}
         <div className="flex-1">
           {isLastStep ? (
-            <SubmitButton loading={loading}>Finish & continue</SubmitButton>
+            <SubmitButton loading={loading}>Finish &amp; continue</SubmitButton>
           ) : (
             <button
               type="submit"

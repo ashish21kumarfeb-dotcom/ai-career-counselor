@@ -39,6 +39,10 @@ function makeState(over: Partial<AgentStateType>): AgentStateType {
     sections: undefined,
     verification: undefined,
     evaluation: undefined,
+    profileAgent: undefined,
+    careerData: undefined,
+    recommendation: undefined,
+    verificationResult: undefined,
     ...over,
   };
 }

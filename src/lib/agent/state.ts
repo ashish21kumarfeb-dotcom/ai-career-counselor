@@ -9,6 +9,12 @@ import type { MemoryEntry } from "../memory/queries";
 import type { RetrievedDocument } from "../documents/queries";
 import type { RetrievedAgency } from "../agencies/queries";
 import type { AgentPlan, ResponseSections, Verification, EvaluationScore } from "./schema";
+import type {
+  ProfileAgentOutput,
+  CareerDataAgentOutput,
+  RecommendationAgentOutput,
+  VerificationAgentOutput,
+} from "./agents/contracts";
 
 // The user_profiles row (or undefined if the user has no profile yet), reused
 // verbatim from the existing query helper without a runtime import.
@@ -52,6 +58,16 @@ export const AgentState = Annotation.Root({
 
   // Custom-evaluator score (SRS §8), stored on ai_recommendations.
   evaluation: Annotation<EvaluationScore | undefined>({ reducer: lastValue, default: () => undefined }),
+
+  // --- Explicit A2A agent output envelopes (the messages passed between the four
+  // agents). Each agent node writes exactly one of these; the next node builds its
+  // input DTO from the previous envelope(s), making the hand-off explicit. The
+  // compat channels above (profile, memory, ragDocs, toolResults, sections,
+  // verification) stay populated so the unchanged evaluate/memory/log nodes work.
+  profileAgent: Annotation<ProfileAgentOutput | undefined>({ reducer: lastValue, default: () => undefined }),
+  careerData: Annotation<CareerDataAgentOutput | undefined>({ reducer: lastValue, default: () => undefined }),
+  recommendation: Annotation<RecommendationAgentOutput | undefined>({ reducer: lastValue, default: () => undefined }),
+  verificationResult: Annotation<VerificationAgentOutput | undefined>({ reducer: lastValue, default: () => undefined }),
 });
 
 export type AgentStateType = typeof AgentState.State;

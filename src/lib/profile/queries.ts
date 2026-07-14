@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "../../db";
 import { userProfiles } from "../../db/schema";
-import type { ProfileInput } from "./validation";
+import type { MappedProfile } from "./fields";
 
 // Drizzle data-access helpers for the `user_profiles` table. The unique
 // constraint on `user_id` guarantees at most one profile per user, so we upsert
@@ -16,7 +16,10 @@ export async function getProfileByUserId(userId: string) {
   return rows[0];
 }
 
-export async function upsertProfile(userId: string, input: ProfileInput) {
+// Persist a profile mapped from dynamic onboarding answers (see
+// mapAnswersToProfile). The 6 common columns are written directly; type-specific
+// extras live in the `details` jsonb column (null when none were provided).
+export async function upsertProfile(userId: string, input: MappedProfile) {
   const values = {
     userId,
     userType: input.userType,
@@ -26,6 +29,7 @@ export async function upsertProfile(userId: string, input: ProfileInput) {
     interests: input.interests,
     careerGoal: input.careerGoal,
     location: input.location,
+    details: input.details,
   };
 
   const rows = await db
@@ -41,6 +45,7 @@ export async function upsertProfile(userId: string, input: ProfileInput) {
         interests: values.interests,
         careerGoal: values.careerGoal,
         location: values.location,
+        details: values.details,
         updatedAt: new Date(),
       },
     })

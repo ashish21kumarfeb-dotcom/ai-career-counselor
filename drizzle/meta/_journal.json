@@ -64,6 +64,13 @@
       "when": 1783503195609,
       "tag": "0008_brave_queen_noir",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1784005250587,
+      "tag": "0009_slow_sharon_carter",
+      "breakpoints": true
     }
   ]
 }

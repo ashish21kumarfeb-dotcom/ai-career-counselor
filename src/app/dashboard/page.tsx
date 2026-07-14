@@ -4,14 +4,7 @@ import { getSession } from "../../lib/auth/session";
 import { getProfileByUserId } from "../../lib/profile/queries";
 import { SignOutButton } from "../../components/auth/SignOutButton";
 import { SketchRocket } from "../../components/decor/SketchRocket";
-
-// Human-readable labels for the stored user_type enum values.
-const USER_TYPE_LABELS: Record<string, string> = {
-  student: "Student",
-  fresher: "Fresher",
-  working_professional: "Working professional",
-  job_switcher: "Job switcher",
-};
+import { USER_TYPE_LABELS, detailEntries } from "../../lib/profile/fields";
 
 // Quick-action cards. Cards with an `href` link to a live feature; the rest are
 // flagged "coming soon" until their phase is built.
@@ -57,14 +50,19 @@ export default async function DashboardPage() {
     redirect("/dashboard/onboarding");
   }
 
+  // For a parent/guardian the common columns describe their CHILD, so relabel
+  // them (see the child-framing note in lib/profile/fields.ts).
+  const isParent = profile.userType === "parent_guardian";
   const profileFields = [
     { label: "Stage", value: USER_TYPE_LABELS[profile.userType] ?? profile.userType },
-    { label: "Education", value: profile.education },
+    { label: isParent ? "Child's education" : "Education", value: profile.education },
     { label: "Current role", value: profile.currentRole },
     { label: "Location", value: profile.location },
     { label: "Skills", value: profile.skills },
-    { label: "Interests", value: profile.interests },
-    { label: "Career goal", value: profile.careerGoal },
+    { label: isParent ? "Child's interests" : "Interests", value: profile.interests },
+    { label: isParent ? "Your concern" : "Career goal", value: profile.careerGoal },
+    // Type-specific answers stored in the `details` jsonb column.
+    ...detailEntries(profile.userType, profile.details as Record<string, unknown> | null),
   ].filter((f) => f.value && String(f.value).trim().length > 0);
 
   return (

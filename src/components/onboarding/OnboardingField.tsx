@@ -100,6 +100,50 @@ export function OnboardingTextarea({
   );
 }
 
+// Inline single-select for a small set of options (e.g. grow vs. switch). Renders
+// as a labelled row of pill buttons — distinct from the large step-1 cards.
+type InlineChoiceProps = BaseProps & {
+  options: { value: string; label: string }[];
+  value: string | null;
+  onChange: (value: string) => void;
+};
+
+export function OnboardingInlineChoice({
+  id,
+  label,
+  hint,
+  error,
+  options,
+  value,
+  onChange,
+}: InlineChoiceProps) {
+  return (
+    <FieldShell id={id} label={label} hint={hint} error={error}>
+      <div role="radiogroup" aria-label={label} className="flex flex-wrap gap-2">
+        {options.map((option) => {
+          const selected = value === option.value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              onClick={() => onChange(option.value)}
+              className={`rounded-xl border px-4 py-2 text-sm font-medium transition-all ${
+                selected
+                  ? "border-brand/70 bg-mint/15 text-heading ring-2 ring-brand/35"
+                  : "border-white/12 bg-white/5 text-slate-300 hover:border-brand/40 hover:bg-white/10"
+              }`}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+    </FieldShell>
+  );
+}
+
 export type ChoiceOption = {
   value: string;
   title: string;
