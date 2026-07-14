@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { profileSchema } from "../../../lib/profile/validation";
+import { profileRequestSchema } from "../../../lib/profile/validation";
+import { mapAnswersToProfile } from "../../../lib/profile/fields";
 import { upsertProfile } from "../../../lib/profile/queries";
 import { getSession } from "../../../lib/auth/session";
 
@@ -16,19 +17,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const parsed = profileSchema.safeParse(body);
+  const parsed = profileRequestSchema.safeParse(body);
   if (!parsed.success) {
+    const flat = parsed.error.flatten();
     return NextResponse.json(
       {
         error: "Validation failed",
-        fieldErrors: parsed.error.flatten().fieldErrors,
+        formErrors: flat.formErrors,
+        fieldErrors: flat.fieldErrors,
       },
       { status: 400 }
     );
   }
 
   try {
-    const profile = await upsertProfile(session.userId, parsed.data);
+    const mapped = mapAnswersToProfile(parsed.data.userType, parsed.data.answers);
+    const profile = await upsertProfile(session.userId, mapped);
     return NextResponse.json({ profile }, { status: 200 });
   } catch (error) {
     console.error("Profile save error:", error);

@@ -1,0 +1,185 @@
+// Verification Agent tests (multi-agent A2A refactor, step 5). Fully deterministic:
+// the soft LLM check is dependency-injected with stubs, so every branch (clean /
+// unsafe / unavailable) is exercised without any LLM or DB call.
+// Run: npm run test:verify
+import {
+  runVerificationAgent,
+  sanitizeDraft,
+  SAFE_FALLBACK_TEXT,
+  type SoftCheckResult,
+} from "../src/lib/agent/agents/verification";
+import type { AgentPlan, ResponseSections, SectionName } from "../src/lib/agent/schema";
+import type { CareerDataAgentOutput, VerificationAgentInput } from "../src/lib/agent/agents/contracts";
+
+let passed = 0;
+let failed = 0;
+function check(name: string, cond: boolean, detail = "") {
+  if (cond) {
+    passed++;
+    console.log(`  PASS  ${name}`);
+  } else {
+    failed++;
+    console.log(`  FAIL  ${name}${detail ? "  :: " + detail : ""}`);
+  }
+}
+
+// Injectable soft-check stubs (no LLM).
+const softOk: () => Promise<SoftCheckResult> = async () => ({ available: true, grounded: true, safe: true, notes: "looks grounded" });
+const softUnsafe: () => Promise<SoftCheckResult> = async () => ({ available: true, grounded: true, safe: false, notes: "guarantees a job" });
+const softUnavailable: () => Promise<SoftCheckResult> = async () => ({ available: false, grounded: false, safe: false, notes: "LLM error" });
+
+// Career Data fixture: the ONLY verified data that may appear downstream.
+const careerData: CareerDataAgentOutput = {
+  ragDocs: [{ id: "d1", type: "career_data", content: "SQL matters.", sourceUrl: "https://k/1" }],
+  resources: [{ title: "Roadmap", type: "career_data", url: "https://res/roadmap" }],
+  courses: [{ title: "DA Cert", type: "career_data", url: "https://course/da" }],
+  agencies: [{ name: "Acme Careers", location: "Delhi", services: "counselling", website: "https://acme", source: "src/acme" }],
+  sourcesUsed: [],
+  missingDataNotes: [],
+};
+
+const A1 = careerData.agencies[0];
+const R1 = careerData.resources[0];
+const C1 = careerData.courses[0];
+
+function plan(sections: SectionName[]): AgentPlan {
+  return { sections, reasoning: "test" };
+}
+function input(sections: SectionName[], draftSections: ResponseSections): VerificationAgentInput {
+  return { query: "help me switch to analytics", plan: plan(sections), draftSections, careerData };
+}
+
+// A clean, fully-valid draft (everything traces to careerData).
+function cleanDraft(): ResponseSections {
+  return {
+    ai_suggestion: "Focus on SQL.",
+    roadmap: { items: ["Learn SQL"], suggested: false },
+    resources: { items: [{ ...R1 }] },
+    courses: { items: [{ ...C1 }] },
+    skill_focus: ["SQL"],
+    agencies: { items: [{ ...A1 }] },
+    next_steps: ["Enrol"],
+  };
+}
+const ALL: SectionName[] = ["ai_suggestion", "roadmap", "resources", "courses", "skill_focus", "agencies", "next_steps"];
+
+console.log("\n== clean draft -> approved ==");
+{
+  const out = await runVerificationAgent(input(ALL, cleanDraft()), { softCheck: softOk });
+  check("approved true", out.approved === true);
+  check("no issues", out.issues.length === 0, JSON.stringify(out.issues));
+  check("soft check available", out.softCheckAvailable === true);
+  check("grounded + safe true", out.grounded === true && out.safe === true);
+  check("finalSections keep the valid resource", out.finalSections.resources?.items[0]?.url === R1.url);
+}
+
+console.log("\n== invented agency -> approved false + sanitized ==");
+{
+  const draft = cleanDraft();
+  draft.agencies = { items: [{ ...A1 }, { name: "Ghost Agency", location: null, services: null, website: "https://ghost", source: "src/ghost" }] };
+  const out = await runVerificationAgent(input(ALL, draft), { softCheck: softOk });
+  const names = (out.finalSections.agencies?.items ?? []).map((a) => a.name);
+  check("approved false", out.approved === false);
+  check("invented agency removed", !names.includes("Ghost Agency") && names.includes("Acme Careers"), JSON.stringify(names));
+  check("issue records the removal", out.issues.some((i) => i.toLowerCase().includes("agency")), JSON.stringify(out.issues));
+}
+
+console.log("\n== invented resource URL -> approved false + sanitized ==");
+{
+  const draft = cleanDraft();
+  draft.resources = { items: [{ ...R1 }, { title: "Evil", type: "career_data", url: "https://evil/phish" }] };
+  const out = await runVerificationAgent(input(ALL, draft), { softCheck: softOk });
+  const urls = (out.finalSections.resources?.items ?? []).map((r) => r.url);
+  check("approved false", out.approved === false);
+  check("invented URL removed", !urls.includes("https://evil/phish") && urls.includes(R1.url), JSON.stringify(urls));
+  check("issue records the removal", out.issues.some((i) => i.toLowerCase().includes("resource")), JSON.stringify(out.issues));
+}
+
+console.log("\n== invented course URL -> approved false + sanitized ==");
+{
+  const draft = cleanDraft();
+  draft.courses = { items: [{ ...C1 }, { title: "Fake Cert", type: "career_data", url: "https://fake/cert" }] };
+  const out = await runVerificationAgent(input(ALL, draft), { softCheck: softOk });
+  const urls = (out.finalSections.courses?.items ?? []).map((c) => c.url);
+  check("approved false", out.approved === false);
+  check("invented course URL removed", !urls.includes("https://fake/cert") && urls.includes(C1.url), JSON.stringify(urls));
+}
+
+console.log("\n== unplanned section -> removed + issue ==");
+{
+  // plan omits resources, but the draft includes a resources section.
+  const out = await runVerificationAgent(input(["ai_suggestion"], { ai_suggestion: "hi", resources: { items: [{ ...R1 }] } }), { softCheck: softOk });
+  check("unplanned section removed", out.finalSections.resources === undefined);
+  check("issue records unplanned removal", out.issues.some((i) => i.toLowerCase().includes("unplanned")), JSON.stringify(out.issues));
+  check("approved false (hard issue)", out.approved === false);
+  check("finalSections keys are a subset of the plan", Object.keys(out.finalSections).every((k) => (["ai_suggestion"] as string[]).includes(k)));
+}
+
+console.log("\n== missing / empty sections handled safely ==");
+{
+  const out1 = await runVerificationAgent(input(["ai_suggestion", "resources"], {}), { softCheck: softOk });
+  check("empty draft does not throw and approves", out1.approved === true && out1.issues.length === 0);
+
+  const out2 = await runVerificationAgent(input(["resources"], { resources: { items: [], note: "No verified resources found for this query." } }), { softCheck: softOk });
+  check("empty planned section kept, no false invention", out2.approved === true && out2.finalSections.resources?.items.length === 0);
+}
+
+console.log("\n== soft unavailable does NOT default to grounded/safe true ==");
+{
+  const out = await runVerificationAgent(input(ALL, cleanDraft()), { softCheck: softUnavailable });
+  check("softCheckAvailable false", out.softCheckAvailable === false);
+  check("grounded NOT true", out.grounded === false);
+  check("safe NOT true", out.safe === false);
+  check("still approved (deterministic passed)", out.approved === true);
+  check("notes state soft check unavailable", out.verificationNotes.toLowerCase().includes("not available") || out.issues.some((i) => i.toLowerCase().includes("unavailable")), out.verificationNotes);
+}
+
+console.log("\n== unsafe soft result -> fallback text ==");
+{
+  const out = await runVerificationAgent(input(ALL, cleanDraft()), { softCheck: softUnsafe });
+  check("approved false", out.approved === false);
+  check("ai_suggestion replaced with safe fallback", out.finalSections.ai_suggestion === SAFE_FALLBACK_TEXT);
+  check("roadmap free-text removed", out.finalSections.roadmap === undefined);
+  check("next_steps removed", out.finalSections.next_steps === undefined);
+  check("verified DB sections kept", out.finalSections.resources?.items[0]?.url === R1.url && out.finalSections.agencies?.items[0]?.name === "Acme Careers");
+  check("issue records unsafe flag", out.issues.some((i) => i.toLowerCase().includes("unsafe")));
+}
+
+console.log("\n== finalSections never contain data outside Career Data (combined) ==");
+{
+  const draft: ResponseSections = {
+    ai_suggestion: "hi",
+    resources: { items: [{ ...R1 }, { title: "X", type: "career_data", url: "https://evil" }] },
+    courses: { items: [{ ...C1 }, { title: "Y", type: "career_data", url: "https://fake" }] },
+    agencies: { items: [{ ...A1 }, { name: "Ghost", location: null, services: null, website: null, source: "ghost" }] },
+    next_steps: ["step"], // unplanned below
+  };
+  const out = await runVerificationAgent(input(["ai_suggestion", "resources", "courses", "agencies"], draft), { softCheck: softOk });
+
+  const allowedRes = new Set(careerData.resources.map((r) => r.url));
+  const allowedCourse = new Set(careerData.courses.map((c) => c.url));
+  const allowedAgency = new Set(careerData.agencies.map((a) => a.name));
+  const okRes = (out.finalSections.resources?.items ?? []).every((r) => allowedRes.has(r.url));
+  const okCourse = (out.finalSections.courses?.items ?? []).every((c) => allowedCourse.has(c.url));
+  const okAgency = (out.finalSections.agencies?.items ?? []).every((a) => allowedAgency.has(a.name));
+  const keysSubset = Object.keys(out.finalSections).every((k) => ["ai_suggestion", "resources", "courses", "agencies"].includes(k));
+
+  check("all resources trace to Career Data", okRes);
+  check("all courses trace to Career Data", okCourse);
+  check("all agencies trace to Career Data", okAgency);
+  check("no unplanned sections remain (next_steps removed)", keysSubset && out.finalSections.next_steps === undefined);
+  check("approved false (multiple hard issues)", out.approved === false);
+}
+
+console.log("\n== sanitizeDraft is pure (input unchanged) ==");
+{
+  const draft = cleanDraft();
+  draft.resources = { items: [{ ...R1 }, { title: "Evil", type: "career_data", url: "https://evil" }] };
+  const before = JSON.stringify(draft);
+  const { finalSections } = sanitizeDraft(input(ALL, draft));
+  check("original draft not mutated", JSON.stringify(draft) === before);
+  check("sanitized copy has the invented URL removed", (finalSections.resources?.items ?? []).every((r) => r.url !== "https://evil"));
+}
+
+console.log(`\n================  ${passed} passed, ${failed} failed  ================`);
+process.exit(failed === 0 ? 0 : 1);

@@ -51,9 +51,11 @@ function fallbackNeeds(query: string): PlannerNeeds {
 export async function plannerNode(
   state: AgentStateType
 ): Promise<Partial<AgentStateType>> {
+  // Planner runs before the Profile / Career Data agents in the A2A graph, so it
+  // decides sections from the query + intent alone. The deterministic gates
+  // (finalizePlan) still carry the safety-critical filtering.
   const userInput = `User query: ${JSON.stringify(state.query)}
-Detected intent: ${state.intent}
-Has profile: ${state.profile ? "yes" : "no"} | Stored memory items: ${state.memory.length} | Retrieved docs: ${state.ragDocs.length}`;
+Detected intent: ${state.intent}`;
 
   let proposed: PlannerNeeds;
   try {

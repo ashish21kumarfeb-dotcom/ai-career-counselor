@@ -40,6 +40,10 @@ function makeState(query: string, sections: SectionName[]): AgentStateType {
     sections: undefined,
     verification: undefined,
     evaluation: undefined,
+    profileAgent: undefined,
+    careerData: undefined,
+    recommendation: undefined,
+    verificationResult: undefined,
   };
 }
 

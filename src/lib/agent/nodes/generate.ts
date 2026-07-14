@@ -11,100 +11,15 @@
 import { z } from "zod";
 import { getGroq, CHAT_MODEL } from "../../ai/client";
 import { BASE_PROMPT } from "../../ai/prompt";
-import type { RetrievedDocument } from "../../documents/queries";
-import type { RetrievedAgency } from "../../agencies/queries";
 import type { AgentStateType } from "../state";
-import type {
-  AgencyItem,
-  ResourceItem,
-  ResponseSections,
-  SectionName,
-  Sourced,
-} from "../schema";
+import type { ResponseSections, SectionName } from "../schema";
+import { buildDbSections, titleOf } from "../sections";
+import { USER_TYPE_LABELS, detailEntries } from "../../profile/fields";
 
-// Course-like heuristic: real course/certification providers. Deliberately narrow
-// (matches provider names + "course"/"certificat") so a learning-guide URL such as
-// MDN's /docs/Learn is treated as a resource, not a course.
-function isCourseLike(doc: RetrievedDocument): boolean {
-  const hay = `${doc.sourceUrl ?? ""} ${doc.content}`;
-  return /certificat|course|coursera|udemy|freecodecamp|grow\.google|nptel|\bedx\b/i.test(hay);
-}
-
-function titleOf(content: string): string {
-  const label = content.split(":")[0].trim();
-  if (label && label.length <= 90) return label;
-  return content.length > 90 ? `${content.slice(0, 87).trim()}...` : content.trim();
-}
-
-function toResourceItem(doc: RetrievedDocument): ResourceItem {
-  return { title: titleOf(doc.content), type: doc.type, url: doc.sourceUrl };
-}
-
-function toAgencyItem(a: RetrievedAgency): AgencyItem {
-  return {
-    name: a.name,
-    location: a.location,
-    services: a.services,
-    website: a.website,
-    source: a.sourceUrl,
-  };
-}
-
-function sourced<T>(items: T[], emptyNote: string): Sourced<T> {
-  return items.length > 0 ? { items } : { items: [], note: emptyNote };
-}
-
-// Pure, LLM-free construction of the DB-backed sections. Exported for tests.
-export function buildDbSections(
-  sections: SectionName[],
-  agencies: RetrievedAgency[],
-  resourceDocs: RetrievedDocument[]
-): {
-  agencies?: Sourced<AgencyItem>;
-  resources?: Sourced<ResourceItem>;
-  courses?: Sourced<ResourceItem>;
-} {
-  const out: {
-    agencies?: Sourced<AgencyItem>;
-    resources?: Sourced<ResourceItem>;
-    courses?: Sourced<ResourceItem>;
-  } = {};
-
-  if (sections.includes("agencies")) {
-    out.agencies = sourced(
-      agencies.map(toAgencyItem),
-      "No verified agencies found for this query."
-    );
-  }
-
-  const wantResources = sections.includes("resources");
-  const wantCourses = sections.includes("courses");
-  if (wantResources || wantCourses) {
-    let resDocs = resourceDocs;
-    let courseDocs = resourceDocs;
-    if (wantResources && wantCourses) {
-      // partition so each link appears once
-      courseDocs = resourceDocs.filter(isCourseLike);
-      resDocs = resourceDocs.filter((d) => !isCourseLike(d));
-    } else if (wantCourses) {
-      courseDocs = resourceDocs.filter(isCourseLike);
-    }
-    if (wantResources) {
-      out.resources = sourced(
-        resDocs.map(toResourceItem),
-        "No verified resources found for this query."
-      );
-    }
-    if (wantCourses) {
-      out.courses = sourced(
-        courseDocs.map(toResourceItem),
-        "No verified courses found for this query."
-      );
-    }
-  }
-
-  return out;
-}
+// The DB-section mappers now live in ../sections (shared with the agent cores).
+// buildDbSections is re-exported here so existing importers of this module (and
+// its tests) keep working unchanged.
+export { buildDbSections };
 
 const textSchema = z.object({
   ai_suggestion: z.string().optional(),
@@ -118,14 +33,21 @@ function buildContext(state: AgentStateType): string {
   const parts: string[] = [];
   const p = state.profile;
   if (p) {
+    // For a parent/guardian the common columns describe their CHILD — relabel them
+    // and add an explicit note so the model advises the child, not the parent.
+    const isParent = p.userType === "parent_guardian";
     const fields = [
-      `Stage: ${p.userType}`,
-      p.education && `Education: ${p.education}`,
+      `Stage: ${USER_TYPE_LABELS[p.userType] ?? p.userType}`,
+      isParent && "Note: this user is a parent/guardian asking on behalf of their child; the fields below describe the child.",
+      p.education && `${isParent ? "Child's education" : "Education"}: ${p.education}`,
       p.currentRole && `Current role: ${p.currentRole}`,
       p.location && `Location: ${p.location}`,
       p.skills && `Skills: ${p.skills}`,
-      p.interests && `Interests: ${p.interests}`,
-      p.careerGoal && `Career goal: ${p.careerGoal}`,
+      p.interests && `${isParent ? "Child's interests" : "Interests"}: ${p.interests}`,
+      p.careerGoal && `${isParent ? "Parent's concern" : "Career goal"}: ${p.careerGoal}`,
+      ...detailEntries(p.userType, p.details as Record<string, unknown> | null).map(
+        (d) => `${d.label}: ${d.value}`
+      ),
     ].filter(Boolean);
     parts.push(`USER PROFILE:\n${fields.join("\n")}`);
   }

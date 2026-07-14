@@ -2,11 +2,16 @@ import { jsonb, pgEnum, pgTable, text, timestamp, unique, uuid, varchar } from "
 
 export const userRole = pgEnum("user_role", ["user", "admin", "agency_owner"]);
 
+// `job_switcher` is retained for legacy rows only — it is no longer offered in
+// onboarding (working_professional now covers career switching). Do NOT remove
+// it: Postgres cannot safely drop an in-use enum value, and old rows must stay
+// valid. `parent_guardian` = a parent/guardian seeking guidance for their child.
 export const userType = pgEnum("user_type", [
   "student",
   "fresher",
   "working_professional",
   "job_switcher",
+  "parent_guardian",
 ]);
 
 export const documentType = pgEnum("document_type", [
@@ -45,6 +50,10 @@ export const userProfiles = pgTable("user_profiles", {
   interests: text("interests"),
   careerGoal: text("career_goal"),
   location: varchar("location"),
+  // Type-specific onboarding answers that don't map to a common column (e.g.
+  // student stream/favorite subjects, fresher graduation year, working-pro
+  // grow-vs-switch, parent's child strengths). Nullable; existing rows stay null.
+  details: jsonb("details"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
