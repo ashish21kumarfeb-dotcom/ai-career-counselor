@@ -33,22 +33,35 @@ const USER_TYPE_OPTIONS: ChoiceOption[] = USER_TYPE_CARDS.map((c) => ({
 const BASE_STEPS = ["You", "Details"] as const;
 const RESUME_STEPS = ["You", "Details", "Resume"] as const;
 
-export function OnboardingForm() {
+type OnboardingFormProps = {
+  // "edit" prefills from an existing profile and relabels the CTA. Defaults to
+  // the first-run "create" flow.
+  mode?: "create" | "edit";
+  initialUserType?: OfferedUserType | null;
+  initialAnswers?: Record<string, string>;
+};
+
+export function OnboardingForm({
+  mode = "create",
+  initialUserType = null,
+  initialAnswers,
+}: OnboardingFormProps = {}) {
   const router = useRouter();
+  const isEdit = mode === "edit";
   const [step, setStep] = useState(0);
 
-  const [userType, setUserType] = useState<OfferedUserType | null>(null);
+  const [userType, setUserType] = useState<OfferedUserType | null>(initialUserType);
   // Dynamic per-type answers, keyed by field.key. Reset when the type changes.
-  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [answers, setAnswers] = useState<Record<string, string>>(initialAnswers ?? {});
 
   const [userTypeError, setUserTypeError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Shared resume-upload mechanics. loadCurrent:false — new users have no resume
-  // to fetch. Only surfaced on the Resume step, but the hook must be called
-  // unconditionally (rules of hooks); the mount GET is skipped anyway.
-  const resume = useResumeUpload({ loadCurrent: false });
+  // Shared resume-upload mechanics. In edit mode, load the user's current resume
+  // so the Resume step can show/replace it; in create mode there's none to fetch.
+  // The hook must be called unconditionally (rules of hooks).
+  const resume = useResumeUpload({ loadCurrent: isEdit });
 
   const steps = userType && showsResumeStep(userType) ? RESUME_STEPS : BASE_STEPS;
   const isLastStep = step === steps.length - 1;
@@ -263,7 +276,7 @@ export function OnboardingForm() {
         <div className="flex-1">
           {isLastStep ? (
             <SubmitButton loading={loading || resume.uploading}>
-              Finish &amp; continue
+              {isEdit ? "Save changes" : "Finish & continue"}
             </SubmitButton>
           ) : (
             <button
