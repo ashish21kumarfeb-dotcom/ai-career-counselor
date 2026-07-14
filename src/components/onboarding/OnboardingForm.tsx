@@ -228,6 +228,7 @@ export function OnboardingForm() {
                 label={field.label}
                 hint={field.hint}
                 placeholder={field.placeholder}
+                type={field.kind === "number" ? "number" : "text"}
                 value={value}
                 onChange={(v) => setAnswer(field.key, v)}
               />

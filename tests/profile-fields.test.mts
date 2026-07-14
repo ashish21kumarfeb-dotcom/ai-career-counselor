@@ -45,7 +45,7 @@ for (const type of OFFERED_USER_TYPES) {
   const keys = fields.map((f) => f.key);
   check(`${type}: has fields`, fields.length > 0);
   check(`${type}: unique field keys`, new Set(keys).size === keys.length, keys.join(","));
-  check(`${type}: every field maps to a column or details`, fields.every((f) => f.mapsTo === "details" || ["education", "currentRole", "skills", "interests", "careerGoal", "location"].includes(f.mapsTo)));
+  check(`${type}: every field maps to a known target`, fields.every((f) => ["details", "yearsExperience", "education", "currentRole", "skills", "interests", "careerGoal", "location"].includes(f.mapsTo)));
   check(`${type}: choice fields declare options`, fields.every((f) => f.kind !== "choice" || (f.options?.length ?? 0) > 0));
   check(`${type}: collects a location`, fields.some((f) => f.mapsTo === "location"));
 }
@@ -107,12 +107,20 @@ const wp = mapAnswersToProfile("working_professional", {
 check("wp: currentRole -> column", wp.currentRole === "Sales Associate", String(wp.currentRole));
 check("wp: skills -> column", wp.skills === "Excel, CRM", String(wp.skills));
 check("wp: careerGoal -> column", wp.careerGoal === "Move into analytics", String(wp.careerGoal));
+check("wp: yearsExperience -> dedicated integer column", wp.yearsExperience === 4, String(wp.yearsExperience));
+check("wp: yearsExperience NOT in details", wp.details?.yearsOfExperience === undefined, JSON.stringify(wp.details));
 check("wp: growOrSwitch -> details", wp.details?.growOrSwitch === "switch", JSON.stringify(wp.details));
-check("wp: yoe/industry/target -> details",
-  wp.details?.yearsOfExperience === "4" &&
+check("wp: industry/target -> details",
   wp.details?.currentIndustry === "FMCG" &&
   wp.details?.targetRoleIndustry === "Data Analyst in fintech",
   JSON.stringify(wp.details));
+
+// yearsExperience parsing: strings, blanks, and non-numeric input.
+check("wp: yearsExperience parses '10'", mapAnswersToProfile("working_professional", { yearsOfExperience: "10" }).yearsExperience === 10);
+check("wp: yearsExperience blank -> null", mapAnswersToProfile("working_professional", { yearsOfExperience: "" }).yearsExperience === null);
+check("wp: yearsExperience number input -> value", mapAnswersToProfile("working_professional", { yearsOfExperience: 7 as unknown as string }).yearsExperience === 7);
+check("wp: yearsExperience non-numeric -> null", mapAnswersToProfile("working_professional", { yearsOfExperience: "abc" }).yearsExperience === null);
+check("student: yearsExperience null (field absent)", mapAnswersToProfile("student", { location: "Delhi" }).yearsExperience === null);
 
 // --- Parent/guardian mapping (child-framed) -----------------------------------
 console.log("\n== parent_guardian mapping ==");

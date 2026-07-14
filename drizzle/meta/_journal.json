@@ -71,6 +71,13 @@
       "when": 1784005250587,
       "tag": "0009_slow_sharon_carter",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1784022881978,
+      "tag": "0010_stale_inhumans",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,1 @@
+ALTER TABLE "user_profiles" ADD COLUMN "years_experience" integer;
