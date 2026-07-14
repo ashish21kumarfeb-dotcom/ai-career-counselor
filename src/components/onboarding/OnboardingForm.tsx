@@ -10,11 +10,14 @@ import {
   OnboardingTextarea,
   type ChoiceOption,
 } from "./OnboardingField";
+import { OnboardingResumeStep } from "./OnboardingResumeStep";
 import {
   ONBOARDING_FIELDS,
   USER_TYPE_CARDS,
+  showsResumeStep,
   type OfferedUserType,
 } from "../../lib/profile/fields";
+import { useResumeUpload } from "../../lib/resume/useResumeUpload";
 
 // Step-1 cards come straight from the shared config (same source the API and
 // mapper use), so the offered types can't drift between UI and server.
@@ -25,7 +28,10 @@ const USER_TYPE_OPTIONS: ChoiceOption[] = USER_TYPE_CARDS.map((c) => ({
   emoji: c.emoji,
 }));
 
-const STEPS = ["You", "Details"] as const;
+// Freshers / working professionals get an extra optional resume step; students
+// and parents don't (see showsResumeStep / RESUME_STEP_TYPES).
+const BASE_STEPS = ["You", "Details"] as const;
+const RESUME_STEPS = ["You", "Details", "Resume"] as const;
 
 export function OnboardingForm() {
   const router = useRouter();
@@ -39,7 +45,13 @@ export function OnboardingForm() {
   const [formError, setFormError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const isLastStep = step === STEPS.length - 1;
+  // Shared resume-upload mechanics. loadCurrent:false — new users have no resume
+  // to fetch. Only surfaced on the Resume step, but the hook must be called
+  // unconditionally (rules of hooks); the mount GET is skipped anyway.
+  const resume = useResumeUpload({ loadCurrent: false });
+
+  const steps = userType && showsResumeStep(userType) ? RESUME_STEPS : BASE_STEPS;
+  const isLastStep = step === steps.length - 1;
   const fields = userType ? ONBOARDING_FIELDS[userType] : [];
 
   function selectUserType(value: string) {
@@ -53,13 +65,20 @@ export function OnboardingForm() {
     setAnswers((prev) => ({ ...prev, [key]: value }));
   }
 
+  // Auto-upload the chosen resume immediately (Approach A). The step is
+  // presentational; upload policy lives here.
+  function onFileChosen(file: File | null) {
+    resume.selectFile(file);
+    if (file) void resume.upload(file);
+  }
+
   function goNext() {
     if (step === 0 && !userType) {
       setUserTypeError("Please choose where you are right now");
       return;
     }
     setFormError(null);
-    setStep((s) => Math.min(s + 1, STEPS.length - 1));
+    setStep((s) => Math.min(s + 1, steps.length - 1));
   }
 
   function goBack() {
@@ -73,6 +92,10 @@ export function OnboardingForm() {
       goNext();
       return;
     }
+
+    // Don't finish while a resume upload is in flight — navigating away would
+    // abort it. The Finish button is disabled in this state; this is a guard.
+    if (resume.uploading) return;
 
     if (!userType) {
       setStep(0);
@@ -114,7 +137,7 @@ export function OnboardingForm() {
     <form onSubmit={handleSubmit} className="flex flex-col gap-6" noValidate>
       {/* Progress */}
       <div className="flex items-center gap-2" aria-hidden>
-        {STEPS.map((label, i) => (
+        {steps.map((label, i) => (
           <div key={label} className="flex flex-1 flex-col gap-1.5">
             <div
               className={`h-1.5 rounded-full transition-colors ${
@@ -213,6 +236,18 @@ export function OnboardingForm() {
         </div>
       ) : null}
 
+      {/* Step 3 — optional resume upload (freshers / working professionals) */}
+      {step === 2 ? (
+        <OnboardingResumeStep
+          current={resume.current}
+          file={resume.file}
+          uploading={resume.uploading}
+          error={resume.error}
+          success={resume.success}
+          onFileChosen={onFileChosen}
+        />
+      ) : null}
+
       {/* Nav */}
       <div className="flex items-center gap-3">
         {step > 0 ? (
@@ -226,7 +261,9 @@ export function OnboardingForm() {
         ) : null}
         <div className="flex-1">
           {isLastStep ? (
-            <SubmitButton loading={loading}>Finish &amp; continue</SubmitButton>
+            <SubmitButton loading={loading || resume.uploading}>
+              Finish &amp; continue
+            </SubmitButton>
           ) : (
             <button
               type="submit"
