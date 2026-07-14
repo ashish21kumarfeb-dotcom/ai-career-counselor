@@ -41,6 +41,9 @@ type TextFieldProps = BaseProps & {
   onChange: (value: string) => void;
   placeholder?: string;
   autoComplete?: string;
+  // Defaults to "text". Use "number" for numeric fields (e.g. years of
+  // experience) — renders a numeric input with a min of 0.
+  type?: "text" | "number";
 };
 
 export function OnboardingText({
@@ -52,13 +55,17 @@ export function OnboardingText({
   onChange,
   placeholder,
   autoComplete,
+  type = "text",
 }: TextFieldProps) {
+  const numeric = type === "number";
   return (
     <FieldShell id={id} label={label} hint={hint} error={error}>
       <input
         id={id}
         name={id}
-        type="text"
+        type={type}
+        inputMode={numeric ? "numeric" : undefined}
+        min={numeric ? 0 : undefined}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}

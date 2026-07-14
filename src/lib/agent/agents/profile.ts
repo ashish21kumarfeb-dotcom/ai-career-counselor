@@ -52,6 +52,7 @@ function summarizeProfile(profile: ProfileRow, ctx: UserContext): string {
   const parts: string[] = [USER_TYPE_LABELS[profile.userType] ?? profile.userType];
   if (isParent) parts.push("seeking guidance for their child");
   if (ctx.currentRole) parts.push(`currently ${ctx.currentRole}`);
+  if (profile.yearsExperience != null) parts.push(`${profile.yearsExperience} yrs experience`);
   if (profile.education) parts.push(`${isParent ? "child's education" : "education"}: ${profile.education}`);
   if (ctx.location) parts.push(`based in ${ctx.location}`);
   if (ctx.skills.length) parts.push(`skills: ${ctx.skills.join(", ")}`);

@@ -39,12 +39,33 @@ function choiceField(field: OnboardingFieldDef) {
     .transform((v) => v ?? null);
 }
 
+// A numeric field (e.g. years of experience): an optional non-negative whole
+// number, or null when blank. Non-numeric / fractional input is rejected.
+function numberField() {
+  return z
+    .preprocess(
+      (v) => (v === "" || v == null ? undefined : v),
+      z.coerce
+        .number({ message: "Enter a number" })
+        .int("Enter a whole number")
+        .min(0, "Must be 0 or more")
+        .max(80, "That seems too high")
+        .optional()
+    )
+    .transform((v) => v ?? null);
+}
+
 // Build the answers object schema for one user type from its field defs. Unknown
 // keys are stripped (zod object default), so stray input can't reach the mapper.
 function buildAnswersSchema(type: OfferedUserType) {
   const shape: Record<string, z.ZodTypeAny> = {};
   for (const field of ONBOARDING_FIELDS[type]) {
-    shape[field.key] = field.kind === "choice" ? choiceField(field) : optionalText;
+    shape[field.key] =
+      field.kind === "choice"
+        ? choiceField(field)
+        : field.kind === "number"
+          ? numberField()
+          : optionalText;
   }
   return z.object(shape);
 }

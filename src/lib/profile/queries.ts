@@ -29,6 +29,7 @@ export async function upsertProfile(userId: string, input: MappedProfile) {
     interests: input.interests,
     careerGoal: input.careerGoal,
     location: input.location,
+    yearsExperience: input.yearsExperience,
     details: input.details,
   };
 
@@ -45,6 +46,7 @@ export async function upsertProfile(userId: string, input: MappedProfile) {
         interests: values.interests,
         careerGoal: values.careerGoal,
         location: values.location,
+        yearsExperience: values.yearsExperience,
         details: values.details,
         updatedAt: new Date(),
       },

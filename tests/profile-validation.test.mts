@@ -56,5 +56,14 @@ const tooLong = profileRequestSchema.safeParse({
 });
 check("2001-char answer rejected", !tooLong.success);
 
+console.log("\n== numeric field (yearsOfExperience) ==");
+const yoeOk = profileRequestSchema.safeParse({ userType: "working_professional", answers: { yearsOfExperience: "5" } });
+check("years '5' accepted -> number 5", yoeOk.success && yoeOk.data.answers.yearsOfExperience === 5, yoeOk.success ? String(yoeOk.data.answers.yearsOfExperience) : "parse failed");
+const yoeBlank = profileRequestSchema.safeParse({ userType: "working_professional", answers: { yearsOfExperience: "" } });
+check("years blank -> null", yoeBlank.success && yoeBlank.data.answers.yearsOfExperience === null);
+check("years non-numeric rejected", !profileRequestSchema.safeParse({ userType: "working_professional", answers: { yearsOfExperience: "abc" } }).success);
+check("years fractional rejected", !profileRequestSchema.safeParse({ userType: "working_professional", answers: { yearsOfExperience: "4.5" } }).success);
+check("years negative rejected", !profileRequestSchema.safeParse({ userType: "working_professional", answers: { yearsOfExperience: "-2" } }).success);
+
 console.log(`\n================  ${passed} passed, ${failed} failed  ================`);
 process.exit(failed === 0 ? 0 : 1);

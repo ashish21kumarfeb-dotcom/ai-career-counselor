@@ -57,6 +57,7 @@ export default async function DashboardPage() {
     { label: "Stage", value: USER_TYPE_LABELS[profile.userType] ?? profile.userType },
     { label: isParent ? "Child's education" : "Education", value: profile.education },
     { label: "Current role", value: profile.currentRole },
+    { label: "Years of experience", value: profile.yearsExperience != null ? String(profile.yearsExperience) : null },
     { label: "Location", value: profile.location },
     { label: "Skills", value: profile.skills },
     { label: isParent ? "Child's interests" : "Interests", value: profile.interests },

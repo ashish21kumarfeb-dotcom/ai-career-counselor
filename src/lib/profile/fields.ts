@@ -43,7 +43,9 @@ export function showsResumeStep(userType: OfferedUserType): boolean {
   return RESUME_STEP_TYPES.has(userType);
 }
 
-// The 6 common columns an answer can map to. Anything else goes to `details`.
+// The 6 common string columns an answer can map to. `yearsExperience` is a
+// separate dedicated integer column (handled specially in mapAnswersToProfile);
+// anything else goes to `details`.
 export type ProfileColumn =
   | "education"
   | "currentRole"
@@ -52,16 +54,20 @@ export type ProfileColumn =
   | "careerGoal"
   | "location";
 
+// Where a field's answer is persisted: a common string column, the dedicated
+// numeric `yearsExperience` column, or the `details` jsonb bag.
+export type FieldTarget = ProfileColumn | "yearsExperience" | "details";
+
 export type OnboardingFieldDef = {
   // Form field name AND, for `mapsTo: "details"`, the JSON property key.
   key: string;
   label: string;
   placeholder?: string;
   hint?: string;
-  kind: "text" | "textarea" | "choice";
+  kind: "text" | "textarea" | "choice" | "number";
   // Only for kind === "choice".
   options?: { value: string; label: string }[];
-  mapsTo: ProfileColumn | "details";
+  mapsTo: FieldTarget;
 };
 
 // Step-1 choice cards. Kept here so the offered types, their copy, and their
@@ -134,7 +140,7 @@ export const ONBOARDING_FIELDS: Record<OfferedUserType, OnboardingFieldDef[]> = 
   ],
   working_professional: [
     { key: "currentRole", label: "Current role", placeholder: "e.g. Sales Associate", kind: "text", mapsTo: "currentRole" },
-    { key: "yearsOfExperience", label: "Years of experience", placeholder: "e.g. 4", kind: "text", mapsTo: "details" },
+    { key: "yearsOfExperience", label: "Years of experience", placeholder: "e.g. 4", kind: "number", mapsTo: "yearsExperience" },
     { key: "currentIndustry", label: "Current industry", placeholder: "e.g. FMCG, IT services", kind: "text", mapsTo: "details" },
     { key: "skills", label: "Skills", hint: "Comma-separated is fine.", placeholder: "e.g. Excel, CRM, team leadership", kind: "textarea", mapsTo: "skills" },
     { key: "careerGoal", label: "Career goal", placeholder: "e.g. Move into business analytics", kind: "textarea", mapsTo: "careerGoal" },
@@ -162,7 +168,8 @@ export const ONBOARDING_FIELDS: Record<OfferedUserType, OnboardingFieldDef[]> = 
   ],
 };
 
-// The mapped shape written to `user_profiles` (common columns + details jsonb).
+// The mapped shape written to `user_profiles` (common columns + the dedicated
+// numeric yearsExperience column + details jsonb).
 export type MappedProfile = {
   userType: OfferedUserType;
   education: string | null;
@@ -171,6 +178,7 @@ export type MappedProfile = {
   interests: string | null;
   careerGoal: string | null;
   location: string | null;
+  yearsExperience: number | null;
   details: Record<string, string> | null;
 };
 
@@ -178,6 +186,21 @@ function normalize(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+// Parse a years-of-experience answer (a number from a validated number field, or
+// a string when called directly) to a non-negative whole number, or null.
+function parseYears(value: unknown): number | null {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : null;
+  }
+  if (typeof value === "string") {
+    const match = value.trim().match(/^\d{1,3}/);
+    if (!match) return null;
+    const n = parseInt(match[0], 10);
+    return Number.isNaN(n) ? null : Math.max(0, n);
+  }
+  return null;
 }
 
 // Map a flat set of raw onboarding answers to the persisted profile shape. Only
@@ -198,8 +221,13 @@ export function mapAnswersToProfile(
     location: null,
   };
   const details: Record<string, string> = {};
+  let yearsExperience: number | null = null;
 
   for (const field of ONBOARDING_FIELDS[userType]) {
+    if (field.mapsTo === "yearsExperience") {
+      yearsExperience = parseYears(answers[field.key]);
+      continue;
+    }
     const value = normalize(answers[field.key]);
     if (value === null) continue;
     if (field.mapsTo === "details") {
@@ -212,6 +240,7 @@ export function mapAnswersToProfile(
   return {
     userType,
     ...columns,
+    yearsExperience,
     details: Object.keys(details).length > 0 ? details : null,
   };
 }
@@ -240,6 +269,9 @@ export function detailEntries(
   const byKey = new Map(defs.map((f) => [f.key, f]));
   const out: { key: string; label: string; value: string }[] = [];
   for (const [key, raw] of Object.entries(details)) {
+    // yearsOfExperience is now a dedicated column; skip any legacy copy still in
+    // `details` so it isn't shown twice.
+    if (key === "yearsOfExperience") continue;
     if (typeof raw !== "string" || raw.trim().length === 0) continue;
     const def = byKey.get(key);
     const label = def?.label ?? prettifyKey(key);

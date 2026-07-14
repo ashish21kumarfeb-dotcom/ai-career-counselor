@@ -41,6 +41,7 @@ function buildContext(state: AgentStateType): string {
       isParent && "Note: this user is a parent/guardian asking on behalf of their child; the fields below describe the child.",
       p.education && `${isParent ? "Child's education" : "Education"}: ${p.education}`,
       p.currentRole && `Current role: ${p.currentRole}`,
+      p.yearsExperience != null && `Years of experience: ${p.yearsExperience}`,
       p.location && `Location: ${p.location}`,
       p.skills && `Skills: ${p.skills}`,
       p.interests && `${isParent ? "Child's interests" : "Interests"}: ${p.interests}`,

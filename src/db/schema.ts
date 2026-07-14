@@ -1,4 +1,4 @@
-import { jsonb, pgEnum, pgTable, text, timestamp, unique, uuid, varchar } from "drizzle-orm/pg-core";
+import { integer, jsonb, pgEnum, pgTable, text, timestamp, unique, uuid, varchar } from "drizzle-orm/pg-core";
 
 export const userRole = pgEnum("user_role", ["user", "admin", "agency_owner"]);
 
@@ -50,6 +50,10 @@ export const userProfiles = pgTable("user_profiles", {
   interests: text("interests"),
   careerGoal: text("career_goal"),
   location: varchar("location"),
+  // Total years of work experience (working professionals). Dedicated numeric
+  // column so it can be filtered/sorted/aggregated. Nullable — only set for types
+  // that collect it; legacy rows may still carry it in `details` (no backfill).
+  yearsExperience: integer("years_experience"),
   // Type-specific onboarding answers that don't map to a common column (e.g.
   // student stream/favorite subjects, fresher graduation year, working-pro
   // grow-vs-switch, parent's child strengths). Nullable; existing rows stay null.
