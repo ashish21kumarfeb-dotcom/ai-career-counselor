@@ -245,6 +245,55 @@ export function mapAnswersToProfile(
   };
 }
 
+// The stored fields the edit form needs to prefill from (a structural subset of
+// the user_profiles row, so fields.ts stays free of DB/Drizzle imports).
+export type ProfileForEdit = {
+  userType: string;
+  education: string | null;
+  currentRole: string | null;
+  skills: string | null;
+  interests: string | null;
+  careerGoal: string | null;
+  location: string | null;
+  yearsExperience: number | null;
+  details: unknown;
+};
+
+// Resolve a stored user_type to an offered type for editing. Legacy `job_switcher`
+// (and any unexpected value) folds into working_professional — see USER_TYPE_LABELS.
+export function resolveOfferedType(userType: string): OfferedUserType {
+  return (OFFERED_USER_TYPES as readonly string[]).includes(userType)
+    ? (userType as OfferedUserType)
+    : "working_professional";
+}
+
+// Inverse of mapAnswersToProfile: turn a stored profile row back into the flat
+// `answers` record the onboarding wizard renders from, so the edit flow can
+// prefill it. Only fields for the (resolved) user type are produced; missing
+// values are left unset. Numbers/choices are stringified to match form state.
+export function unmapProfileToAnswers(profile: ProfileForEdit): {
+  userType: OfferedUserType;
+  answers: Record<string, string>;
+} {
+  const userType = resolveOfferedType(profile.userType);
+  const details =
+    profile.details && typeof profile.details === "object"
+      ? (profile.details as Record<string, unknown>)
+      : {};
+  const answers: Record<string, string> = {};
+
+  for (const field of ONBOARDING_FIELDS[userType]) {
+    let value: unknown;
+    if (field.mapsTo === "yearsExperience") value = profile.yearsExperience;
+    else if (field.mapsTo === "details") value = details[field.key];
+    else value = profile[field.mapsTo]; // one of the common string columns
+    if (value === null || value === undefined) continue;
+    answers[field.key] = String(value);
+  }
+
+  return { userType, answers };
+}
+
 // Fallback label for a details key with no matching field def (e.g. a key from an
 // older field set): "childStrengths" -> "Child strengths".
 function prettifyKey(key: string): string {

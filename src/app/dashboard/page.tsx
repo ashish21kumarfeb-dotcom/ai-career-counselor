@@ -151,7 +151,7 @@ export default async function DashboardPage() {
                 </p>
               </div>
               <Link
-                href="/dashboard/onboarding"
+                href="/dashboard/profile"
                 className="btn-ghost inline-flex h-9 shrink-0 items-center justify-center rounded-full px-4 text-sm font-medium"
               >
                 Edit

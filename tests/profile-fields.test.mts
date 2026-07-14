@@ -10,6 +10,9 @@ import {
   RESUME_STEP_TYPES,
   showsResumeStep,
   mapAnswersToProfile,
+  unmapProfileToAnswers,
+  resolveOfferedType,
+  type ProfileForEdit,
 } from "../src/lib/profile/fields";
 
 let passed = 0;
@@ -159,6 +162,55 @@ const empty = mapAnswersToProfile("fresher", {});
 check("no answers -> details null", empty.details === null, JSON.stringify(empty.details));
 check("no answers -> all columns null", [empty.education, empty.currentRole, empty.skills, empty.interests, empty.careerGoal, empty.location].every((v) => v === null));
 check("userType always echoed", empty.userType === "fresher");
+
+// --- unmapProfileToAnswers (edit prefill) ------------------------------------
+console.log("\n== unmap / edit prefill ==");
+
+// A stored row -> answers -> mapped again should reproduce the mapped shape.
+function rowFrom(userType: string, answers: Record<string, string>): ProfileForEdit {
+  const m = mapAnswersToProfile(userType as "student", answers);
+  return {
+    userType,
+    education: m.education,
+    currentRole: m.currentRole,
+    skills: m.skills,
+    interests: m.interests,
+    careerGoal: m.careerGoal,
+    location: m.location,
+    yearsExperience: m.yearsExperience,
+    details: m.details,
+  };
+}
+
+const wpAnswers = { currentRole: "Sales Associate", yearsOfExperience: "6", currentIndustry: "FMCG", skills: "Excel", careerGoal: "Analytics", growOrSwitch: "switch", targetRoleIndustry: "Data Analyst", location: "Pune" };
+const wpRow = rowFrom("working_professional", wpAnswers);
+const wpUnmapped = unmapProfileToAnswers(wpRow);
+check("unmap: userType preserved", wpUnmapped.userType === "working_professional");
+check("unmap: currentRole prefilled", wpUnmapped.answers.currentRole === "Sales Associate", wpUnmapped.answers.currentRole);
+check("unmap: yearsExperience stringified", wpUnmapped.answers.yearsOfExperience === "6", wpUnmapped.answers.yearsOfExperience);
+check("unmap: choice value prefilled", wpUnmapped.answers.growOrSwitch === "switch", wpUnmapped.answers.growOrSwitch);
+check("unmap: details field prefilled", wpUnmapped.answers.currentIndustry === "FMCG", wpUnmapped.answers.currentIndustry);
+
+// Round-trip for every type: map(unmap(row)) deep-equals the original mapped row.
+for (const type of OFFERED_USER_TYPES) {
+  const answers: Record<string, string> = {};
+  for (const f of ONBOARDING_FIELDS[type]) {
+    answers[f.key] = f.kind === "number" ? "4" : f.kind === "choice" ? (f.options?.[0]?.value ?? "x") : `${f.key}-val`;
+  }
+  const row = rowFrom(type, answers);
+  const re = mapAnswersToProfile(type, unmapProfileToAnswers(row).answers);
+  check(`round-trip ${type}: columns + years + details match`,
+    JSON.stringify(re) === JSON.stringify(mapAnswersToProfile(type, answers)),
+    JSON.stringify(re));
+}
+
+// Legacy job_switcher folds into working_professional for editing.
+check("resolveOfferedType: job_switcher -> working_professional", resolveOfferedType("job_switcher") === "working_professional");
+check("resolveOfferedType: known passes through", resolveOfferedType("student") === "student");
+check("resolveOfferedType: unknown -> working_professional", resolveOfferedType("banana") === "working_professional");
+const legacyRow = rowFrom("working_professional", { currentRole: "Lead" });
+legacyRow.userType = "job_switcher";
+check("unmap: legacy job_switcher -> working_professional", unmapProfileToAnswers(legacyRow).userType === "working_professional");
 
 console.log(`\n================  ${passed} passed, ${failed} failed  ================`);
 process.exit(failed === 0 ? 0 : 1);
