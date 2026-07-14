@@ -26,7 +26,8 @@
     "test:parse": "tsx tests/resume-parse.test.mts",
     "seed:documents": "tsx src/db/seed/documents.ts",
     "seed:agencies": "tsx src/db/seed/agencies.ts",
-    "backfill:job-switcher": "tsx src/db/backfill/job-switcher-to-working-professional.ts"
+    "backfill:job-switcher": "tsx src/db/backfill/job-switcher-to-working-professional.ts",
+    "backfill:years-experience": "tsx src/db/backfill/years-experience-from-details.ts"
   },
   "dependencies": {
     "@langchain/core": "^1.2.2",
