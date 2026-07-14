@@ -7,6 +7,8 @@ import {
   ONBOARDING_FIELDS,
   OFFERED_USER_TYPES,
   USER_TYPE_CARDS,
+  RESUME_STEP_TYPES,
+  showsResumeStep,
   mapAnswersToProfile,
 } from "../src/lib/profile/fields";
 
@@ -28,6 +30,15 @@ check("job_switcher is NOT offered", !(OFFERED_USER_TYPES as readonly string[]).
 check("parent_guardian IS offered", (OFFERED_USER_TYPES as readonly string[]).includes("parent_guardian"));
 check("4 user types offered", OFFERED_USER_TYPES.length === 4, String(OFFERED_USER_TYPES.length));
 check("a card exists for every offered type", OFFERED_USER_TYPES.every((t) => USER_TYPE_CARDS.some((c) => c.value === t)));
+
+// --- Resume step gating -------------------------------------------------------
+console.log("\n== resume step gating ==");
+check("resume step: fresher included", showsResumeStep("fresher"));
+check("resume step: working_professional included", showsResumeStep("working_professional"));
+check("resume step: student excluded", !showsResumeStep("student"));
+check("resume step: parent_guardian excluded", !showsResumeStep("parent_guardian"));
+check("resume step: exactly 2 types", RESUME_STEP_TYPES.size === 2, String(RESUME_STEP_TYPES.size));
+check("resume step: all eligible types are offered", [...RESUME_STEP_TYPES].every((t) => (OFFERED_USER_TYPES as readonly string[]).includes(t)));
 
 for (const type of OFFERED_USER_TYPES) {
   const fields = ONBOARDING_FIELDS[type];

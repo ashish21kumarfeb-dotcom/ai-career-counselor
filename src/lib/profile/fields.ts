@@ -28,6 +28,21 @@ export const OFFERED_USER_TYPES = [
 
 export type OfferedUserType = (typeof OFFERED_USER_TYPES)[number];
 
+// User types that get an optional resume/CV upload step in onboarding. These are
+// the types who typically have a CV; students/parents don't, so the step is
+// hidden for them. Uploading is always optional and reuses the /api/resume flow
+// (the dashboard "Resume & documents" section remains the place to manage it
+// later). Single source of truth for which onboarding flows include the step.
+export const RESUME_STEP_TYPES: ReadonlySet<OfferedUserType> = new Set([
+  "fresher",
+  "working_professional",
+]);
+
+// Whether the given user type shows the onboarding resume step.
+export function showsResumeStep(userType: OfferedUserType): boolean {
+  return RESUME_STEP_TYPES.has(userType);
+}
+
 // The 6 common columns an answer can map to. Anything else goes to `details`.
 export type ProfileColumn =
   | "education"

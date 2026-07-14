@@ -1,18 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef } from "react";
+import { useResumeUpload } from "../../lib/resume/useResumeUpload";
 
-// Resume upload UI. Loads the user's current resume (if any) on mount, accepts a
-// PDF / DOCX / TXT file, uploads it to /api/resume (parse + store + memory
-// extraction happen server-side), and reflects the result. One active resume per
-// user — a new upload replaces the previous one.
-
-type Current = {
-  filename: string;
-  chars: number;
-  preview: string;
-  uploadedAt: string;
-} | null;
+// Resume upload UI for the dashboard. Loads the user's current resume (if any) on
+// mount, accepts a PDF / DOCX / TXT file, uploads it to /api/resume (parse +
+// store + memory extraction happen server-side), and reflects the result. One
+// active resume per user — a new upload replaces the previous one. The upload
+// mechanics live in the shared useResumeUpload hook (also used by onboarding).
 
 const ACCEPT = ".pdf,.docx,.txt";
 
@@ -22,61 +17,13 @@ function formatDate(iso: string): string {
 }
 
 export function ResumeUploader() {
-  const [current, setCurrent] = useState<Current>(null);
-  const [loadingCurrent, setLoadingCurrent] = useState(true);
-  const [file, setFile] = useState<File | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const { current, loadingCurrent, file, selectFile, upload, uploading, error, success } =
+    useResumeUpload();
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    let active = true;
-    fetch("/api/resume")
-      .then((r) => r.json())
-      .then((d) => {
-        if (active) setCurrent(d.resume ?? null);
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (active) setLoadingCurrent(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  async function upload() {
-    if (!file || uploading) return;
-    setError(null);
-    setSuccess(null);
-    setUploading(true);
-    try {
-      const fd = new FormData();
-      fd.append("file", file);
-      const res = await fetch("/api/resume", { method: "POST", body: fd });
-      const data = await res.json().catch(() => ({}));
-
-      if (res.status === 200 && data.ok) {
-        setCurrent({
-          filename: data.filename,
-          chars: data.chars,
-          preview: data.preview,
-          uploadedAt: new Date().toISOString(),
-        });
-        setSuccess(`Uploaded ${data.filename} — ${data.chars.toLocaleString()} characters. Your career advice will now use it.`);
-        setFile(null);
-        if (inputRef.current) inputRef.current.value = "";
-      } else if (res.status === 401) {
-        setError("Your session expired. Please sign in again.");
-      } else {
-        setError(data.error ?? "Upload failed. Please try again.");
-      }
-    } catch {
-      setError("Network error. Please try again.");
-    } finally {
-      setUploading(false);
-    }
+  async function handleUpload() {
+    const ok = await upload();
+    if (ok && inputRef.current) inputRef.current.value = "";
   }
 
   return (
@@ -127,11 +74,7 @@ export function ResumeUploader() {
             type="file"
             accept={ACCEPT}
             className="sr-only"
-            onChange={(e) => {
-              setError(null);
-              setSuccess(null);
-              setFile(e.target.files?.[0] ?? null);
-            }}
+            onChange={(e) => selectFile(e.target.files?.[0] ?? null)}
           />
         </label>
 
@@ -146,7 +89,7 @@ export function ResumeUploader() {
 
         <button
           type="button"
-          onClick={upload}
+          onClick={handleUpload}
           disabled={!file || uploading}
           className="btn-primary mt-4 flex h-11 w-full items-center justify-center rounded-xl px-4 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
         >
