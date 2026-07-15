@@ -18,6 +18,7 @@
 // deterministically without hitting the model; the default is the real Groq call.
 import { z } from "zod";
 import { getGroq, CHAT_MODEL } from "../../ai/client";
+import { verificationAgentOutputSchema } from "./contracts";
 import type { AgentPlan, ResponseSections, SectionName } from "../schema";
 import type {
   CareerDataAgentOutput,
@@ -276,6 +277,23 @@ export async function runSoftCheck(
   }
 }
 
+// The correction brief handed BACK to the Recommendation Agent when a draft is
+// rejected. Deterministic — built from the issues the checks already produced,
+// plus the standing grounding rules the draft evidently broke. No LLM: asking a
+// model to explain why another model failed adds a failure mode and buys nothing
+// the issue list does not already say.
+//
+// Undefined when there is nothing to fix, so `recommendedFix` being present is
+// itself the signal that a regeneration has something to act on.
+export function buildRecommendedFix(issues: string[]): string | undefined {
+  if (issues.length === 0) return undefined;
+  return [
+    "Rewrite the free-text sections so that every one of the problems below is gone.",
+    "Use ONLY the agencies, courses and links supplied in the context — if the context lists none, name none.",
+    "Do not invent providers, companies, statistics or salaries, and do not guarantee jobs, interviews or outcomes.",
+  ].join(" ");
+}
+
 // --- Agent entrypoint ----------------------------------------------------------
 export async function runVerificationAgent(
   input: VerificationAgentInput,
@@ -312,13 +330,25 @@ export async function runVerificationAgent(
   else if (soft.notes) noteParts.push(soft.notes);
   const verificationNotes = noteParts.join(" ");
 
-  return {
+  const output: VerificationAgentOutput = {
     approved,
     grounded,
     safe,
     softCheckAvailable,
     issues,
     verificationNotes,
+    // Only meaningful when the draft was rejected — this is what the
+    // Recommendation Agent regenerates against.
+    recommendedFix: approved ? undefined : buildRecommendedFix(issues),
     finalSections,
   };
+
+  // Validate the output contract at the hand-off boundary, matching the Profile
+  // and Career Data agents. Log and return the constructed (correctly shaped)
+  // output rather than throwing into the graph.
+  const parsed = verificationAgentOutputSchema.safeParse(output);
+  if (!parsed.success) {
+    console.error("Verification Agent output failed contract validation:", parsed.error);
+  }
+  return output;
 }

@@ -95,6 +95,12 @@ export const AgentState = Annotation.Root({
   careerData: Annotation<CareerDataAgentOutput | undefined>({ reducer: lastValue, default: () => undefined }),
   recommendation: Annotation<RecommendationAgentOutput | undefined>({ reducer: lastValue, default: () => undefined }),
   verificationResult: Annotation<VerificationAgentOutput | undefined>({ reducer: lastValue, default: () => undefined }),
+
+  // How many times the Recommendation Agent has REGENERATED after a rejection.
+  // 0 on the first pass. The router allows exactly one retry, so this never
+  // exceeds 1; it is the loop's termination guard and must be incremented by a
+  // node (a conditional-edge function returns a route, it cannot write state).
+  regenerationAttempts: Annotation<number>({ reducer: lastValue, default: () => 0 }),
 });
 
 export type AgentStateType = typeof AgentState.State;

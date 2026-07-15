@@ -13,15 +13,25 @@ import { saveRun } from "../trace/queries";
 import type { FinalStatus } from "../trace/types";
 import type { AgentStateType } from "../state";
 
-// Derive how the run ended from what verification concluded.
+// Derive how the run ended from what verification concluded and whether the
+// regeneration loop was used. Mirrors routeAfterVerification in graph.ts — if
+// that router changes, this must too, or the trace will misreport the ending.
 //
-// Phase 1 reaches only `approved` / `corrected` / `failed`: rejection is terminal
-// (the corrected answer ships anyway), so there is no regeneration or safe-text
-// fallback yet. `regenerated` and `fallback` become reachable in Phase 3.
+//   failed      — verification never produced a verdict.
+//   approved    — passed first time.
+//   regenerated — was rejected, regenerated once, then passed.
+//   fallback    — still rejected after its retry; safe summary shipped.
+//
+// `corrected` is NOT produced any more. It was the Phase 1 ending, when
+// rejection was terminal and the corrected answer shipped regardless; the loop
+// replaces that path entirely. The value stays in FINAL_STATUSES and the pg enum
+// because Phase 1 rows still carry it (and Postgres cannot safely drop an in-use
+// enum value).
 export function deriveFinalStatus(state: AgentStateType): FinalStatus {
   const v = state.verificationResult;
-  if (!v) return "failed"; // verification never produced a verdict
-  return v.approved ? "approved" : "corrected";
+  if (!v) return "failed";
+  if (v.approved) return state.regenerationAttempts > 0 ? "regenerated" : "approved";
+  return "fallback";
 }
 
 export async function persistTraceNode(

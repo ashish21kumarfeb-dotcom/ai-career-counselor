@@ -10,6 +10,7 @@ import type {
   RecommendationAgentInput,
   ProfileAgentOutput,
   CareerDataAgentOutput,
+  VerificationFeedback,
 } from "../agents/contracts";
 import type { AgentStateType } from "../state";
 import type { AgentPlan, SectionName } from "../schema";
@@ -36,7 +37,26 @@ export async function recommendationAgentNode(
   state: AgentStateType
 ): Promise<Partial<AgentStateType>> {
   const plan = state.plan ?? FALLBACK_PLAN;
-  logHandoff("Profile+CareerData", "Recommendation", { plan: plan.sections });
+
+  // A rejected verdict already on state means the Verification Agent sent this
+  // draft back — this is the regeneration pass, and the verdict IS the feedback.
+  // The attempt counter is incremented here because a conditional-edge router
+  // returns a route and cannot write state; without this the loop has no guard.
+  const rejected = state.verificationResult && !state.verificationResult.approved;
+  const feedback: VerificationFeedback | undefined = rejected
+    ? {
+        issues: state.verificationResult!.issues,
+        notes: state.verificationResult!.verificationNotes,
+        recommendedFix: state.verificationResult!.recommendedFix,
+      }
+    : undefined;
+  const regenerationAttempts = rejected ? state.regenerationAttempts + 1 : state.regenerationAttempts;
+
+  logHandoff(
+    rejected ? "Verification" : "Profile+CareerData",
+    "Recommendation",
+    rejected ? { regenerate: true, issues: feedback?.issues.length } : { plan: plan.sections }
+  );
 
   const input: RecommendationAgentInput = {
     query: state.query,
@@ -44,8 +64,11 @@ export async function recommendationAgentNode(
     plan,
     profile: state.profileAgent ?? DEFAULT_PROFILE,
     careerData: state.careerData ?? DEFAULT_CAREER_DATA,
+    feedback,
   };
+  // Note: careerData is reused as-is. Regeneration re-writes the answer; it does
+  // NOT re-run retrieval, so a retry costs one LLM call, not a second full pass.
   const recommendation = await runRecommendationAgent(input);
 
-  return { recommendation };
+  return { recommendation, regenerationAttempts };
 }

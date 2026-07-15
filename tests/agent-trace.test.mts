@@ -51,6 +51,7 @@ function makeState(over: Partial<AgentStateType>): AgentStateType {
     careerData: undefined,
     recommendation: undefined,
     verificationResult: undefined,
+    regenerationAttempts: 0,
     ...over,
   };
 }
@@ -142,10 +143,12 @@ console.log("\n== A. traced() wrapper ==");
   check("still returns the node's partial", out.intent === "other");
 }
 
-console.log("\n== A. deriveFinalStatus ==");
+console.log("\n== A. deriveFinalStatus (smoke — full matrix lives in test:regen) ==");
 {
+  // Phase 3 replaced the old "rejected -> corrected" ending: rejection is no
+  // longer terminal, it routes to regenerate and then to a safe fallback.
   check("approved verdict -> approved", deriveFinalStatus(makeState({ verificationResult: verdict({ approved: true }) })) === "approved");
-  check("rejected verdict -> corrected", deriveFinalStatus(makeState({ verificationResult: verdict({ approved: false }) })) === "corrected");
+  check("rejected verdict -> fallback", deriveFinalStatus(makeState({ verificationResult: verdict({ approved: false }), regenerationAttempts: 1 })) === "fallback");
   check("no verdict -> failed", deriveFinalStatus(makeState({ verificationResult: undefined })) === "failed");
 }
 

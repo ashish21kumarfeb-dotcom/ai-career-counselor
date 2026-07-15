@@ -48,6 +48,7 @@ function makeState(query: string, sections: SectionName[]): AgentStateType {
     careerData: undefined,
     recommendation: undefined,
     verificationResult: undefined,
+    regenerationAttempts: 0,
   };
 }
 

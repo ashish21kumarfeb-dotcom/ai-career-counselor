@@ -47,6 +47,7 @@ function makeState(over: Partial<AgentStateType>): AgentStateType {
     careerData: undefined,
     recommendation: undefined,
     verificationResult: undefined,
+    regenerationAttempts: 0,
     ...over,
   };
 }

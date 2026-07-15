@@ -27,8 +27,38 @@ import { memoryNode } from "./nodes/memory";
 import { evaluateNode } from "./nodes/evaluate";
 import { logNode } from "./nodes/log";
 import { persistTraceNode } from "./nodes/persistTrace";
+import { safeFallbackNode } from "./nodes/safeFallback";
+import type { AgentStateType } from "./state";
 
-export function buildAgentGraph() {
+// Where a run goes after verification. Pure and total, so the loop's termination
+// is a property of this function rather than of the graph's shape:
+//   approved                  -> proceed (first pass or a successful retry)
+//   rejected, no retry yet    -> regenerate with the verifier's feedback
+//   rejected, already retried -> stop trying; ship a safe fallback
+// Exported for tests.
+export const MAX_REGENERATIONS = 1;
+
+export function routeAfterVerification(
+  state: AgentStateType
+): "proceed" | "regenerate" | "fallback" {
+  if (state.verificationResult?.approved) return "proceed";
+  // No verdict at all means verification itself failed; regenerating would be
+  // guesswork, so take the safe branch rather than loop.
+  if (!state.verificationResult) return "fallback";
+  return state.regenerationAttempts < MAX_REGENERATIONS ? "regenerate" : "fallback";
+}
+
+// Verification is the only node whose OUTPUT decides routing, so it is
+// injectable — the loop cannot otherwise be tested without waiting for the model
+// to produce a genuinely bad draft. Same dependency-injection pattern as
+// runVerificationAgent's opts.softCheck: the real graph is exercised, only the
+// verdict is stubbed.
+export type GraphOverrides = {
+  verificationNode?: (state: AgentStateType) => Promise<Partial<AgentStateType>>;
+};
+
+export function buildAgentGraph(overrides: GraphOverrides = {}) {
+  const verification = overrides.verificationNode ?? verificationAgentNode;
   // Node names must not collide with state channel names.
   return new StateGraph(AgentState)
     .addNode(
@@ -98,14 +128,27 @@ export function buildAgentGraph() {
     )
     .addNode(
       "recommendation_agent",
-      traced("recommendation_agent", "agent", recommendationAgentNode, (p) => ({
-        summary: `drafted: ${Object.keys(p.recommendation?.draftSections ?? {}).join(", ") || "(none)"}`,
-        detail: { draftSections: Object.keys(p.recommendation?.draftSections ?? {}) },
-      }))
+      traced("recommendation_agent", "agent", recommendationAgentNode, (p, s) => {
+        // Second pass: re-typed as "regeneration" so the loop is visible in the
+        // trace without correlating repeated step names by hand.
+        const isRegen = (p.regenerationAttempts ?? 0) > s.regenerationAttempts;
+        const drafted = Object.keys(p.recommendation?.draftSections ?? {});
+        return {
+          type: isRegen ? "regeneration" : "agent",
+          summary: isRegen
+            ? `regenerated after rejection: ${drafted.join(", ") || "(none)"}`
+            : `drafted: ${drafted.join(", ") || "(none)"}`,
+          detail: {
+            draftSections: drafted,
+            attempt: (p.regenerationAttempts ?? 0) + 1,
+            actingOnIssues: isRegen ? s.verificationResult?.issues : undefined,
+          },
+        };
+      })
     )
     .addNode(
       "verification_agent",
-      traced("verification_agent", "verification", verificationAgentNode, (p) => {
+      traced("verification_agent", "verification", verification, (p) => {
         const v = p.verificationResult;
         // An unavailable soft check is degraded, NOT ok: grounded/safe are
         // reported false-because-unconfirmed, and the run must say so.
@@ -149,6 +192,13 @@ export function buildAgentGraph() {
         summary: s.persist ? "turn logged" : "skipped (persist:false)",
       }))
     )
+    .addNode(
+      "safe_fallback",
+      traced("safe_fallback", "regeneration", safeFallbackNode, () => ({
+        status: "degraded",
+        summary: "rejected twice — free text replaced with a safe summary; verified sections kept",
+      }))
+    )
     // Terminal trace flush. Untraced by design — see nodes/persistTrace.ts.
     .addNode("persist_trace", persistTraceNode)
     .addEdge(START, "extract_intent")
@@ -157,7 +207,17 @@ export function buildAgentGraph() {
     .addEdge("profile_agent", "career_data_agent")
     .addEdge("career_data_agent", "recommendation_agent")
     .addEdge("recommendation_agent", "verification_agent")
-    .addEdge("verification_agent", "update_memory")
+    // THE LOOP. Verification can send a draft back instead of merely correcting
+    // it and shipping. Exactly one retry: routeAfterVerification is the guard,
+    // and it is a pure function of state so every branch is unit-testable.
+    // Note the retry edge targets recommendation_agent, NOT career_data_agent —
+    // retrieval is not repeated.
+    .addConditionalEdges("verification_agent", routeAfterVerification, {
+      regenerate: "recommendation_agent",
+      fallback: "safe_fallback",
+      proceed: "update_memory",
+    })
+    .addEdge("safe_fallback", "update_memory")
     .addEdge("update_memory", "evaluate")
     .addEdge("evaluate", "log_turn")
     .addEdge("log_turn", "persist_trace")

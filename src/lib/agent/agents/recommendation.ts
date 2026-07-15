@@ -78,6 +78,22 @@ function buildContext(profile: ProfileAgentOutput, careerData: CareerDataAgentOu
 
 // LLM call producing ONLY the requested text sections. Kept separate from assembly
 // so assembly stays pure/testable. May throw (network/parse) — the caller catches.
+// The correction brief for a regeneration pass. Rendered from the Verification
+// Agent's feedback, so the second attempt is told exactly what was wrong instead
+// of being asked to try again and hope.
+function renderFeedback(feedback: RecommendationAgentInput["feedback"]): string {
+  if (!feedback) return "";
+  const parts = [
+    "",
+    "CORRECTION REQUIRED — your previous draft was REJECTED by verification.",
+    ...(feedback.recommendedFix ? [feedback.recommendedFix] : []),
+    ...(feedback.issues.length ? ["Problems found:", ...feedback.issues.map((i) => `- ${i}`)] : []),
+    ...(feedback.notes ? [`Verifier notes: ${feedback.notes}`] : []),
+    "Rewrite the requested sections so none of the above recurs. Keep everything else that was fine.",
+  ];
+  return parts.join("\n");
+}
+
 async function generateText(
   input: RecommendationAgentInput,
   wantText: SectionName[],
@@ -101,6 +117,7 @@ Grounding rules: use ONLY the provided context for facts. Do NOT invent agencies
 
 CONTEXT:
 ${buildContext(input.profile, input.careerData)}
+${renderFeedback(input.feedback)}
 
 Produce the JSON object now with only these keys: ${keys}.`;
 

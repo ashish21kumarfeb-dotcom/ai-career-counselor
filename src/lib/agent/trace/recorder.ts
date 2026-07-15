@@ -49,8 +49,13 @@ export function boundDetail(
 export type NodeFn = (state: AgentStateType) => Promise<Partial<AgentStateType>>;
 
 // What a node's result means, in trace terms. Returning no status means "ok".
+//
+// `type` may be overridden per-run: the recommendation node is an "agent" on its
+// first pass and a "regeneration" on its second, and a reader of the trace should
+// be able to see the loop without correlating step names by hand.
 export type TraceSummary = {
   status?: TraceStatus;
+  type?: TraceEventType;
   summary: string;
   detail?: Record<string, unknown>;
 };
@@ -112,7 +117,7 @@ export function traced(
       const event = makeEvent(
         seq,
         step,
-        type,
+        s.type ?? type,
         s.status ?? "ok",
         Date.now() - startedAt,
         s.summary,

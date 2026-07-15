@@ -26,6 +26,7 @@
     "test:a2a": "tsx tests/agent-a2a.test.mts",
     "test:trace": "tsx tests/agent-trace.test.mts",
     "test:exec-plan": "tsx tests/agent-execution-plan.test.mts",
+    "test:regen": "tsx tests/agent-regeneration.test.mts",
     "test:parse": "tsx tests/resume-parse.test.mts",
     "seed:documents": "tsx src/db/seed/documents.ts",
     "seed:agencies": "tsx src/db/seed/agencies.ts",
