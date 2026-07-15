@@ -36,6 +36,7 @@ const careerData: CareerDataAgentOutput = {
   agencies: [{ name: "Acme Careers", location: "Delhi", services: "counselling", website: "https://acme", source: "src/acme" }],
   sourcesUsed: [],
   missingDataNotes: [],
+  toolCalls: [],
 };
 
 const A1 = careerData.agencies[0];

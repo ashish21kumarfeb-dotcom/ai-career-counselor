@@ -202,9 +202,24 @@ if (!process.env.DATABASE_URL) {
         query: "How do I move from manual testing into data analysis?",
       });
 
-      // The response contract must be untouched by Phase 1.
-      const responseKeys = ["intent", "plan", "sections", "verification", "evaluation"] as const;
+      // The response contract must be untouched. `evaluation` is deliberately NOT
+      // in this list: the evaluator is fault-tolerant and records no score rather
+      // than blocking the response, so its absence is valid degraded behaviour —
+      // commonly a Groq rate limit. Requiring it here would turn an exhausted
+      // quota into a false regression. It is asserted separately below, against
+      // what the trace says actually happened.
+      const responseKeys = ["intent", "plan", "sections", "verification"] as const;
       check("response channels all still populated", responseKeys.every((k) => result[k] !== undefined), JSON.stringify(Object.keys(result)));
+
+      const evalEvent = (result.trace ?? []).find((e) => e.step === "evaluate");
+      if (result.evaluation !== undefined) {
+        check("evaluation present -> trace records it as ok", evalEvent?.status === "ok", JSON.stringify(evalEvent));
+      } else {
+        // Absent score MUST be visible as a degraded event, never silently missing.
+        check("evaluation absent -> trace records the degradation", evalEvent?.status === "degraded", JSON.stringify(evalEvent));
+        console.log("  NOTE: evaluator produced no score (LLM unavailable — commonly a Groq rate limit).");
+        console.log("  The trace records this as degraded, which is the contract being asserted.");
+      }
 
       const row = await getRunByRunId(runId);
       check("live run writes exactly one agent_runs row", !!row);

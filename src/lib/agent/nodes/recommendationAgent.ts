@@ -31,6 +31,7 @@ const DEFAULT_CAREER_DATA: CareerDataAgentOutput = {
   agencies: [],
   sourcesUsed: [],
   missingDataNotes: [],
+  toolCalls: [],
 };
 
 export async function recommendationAgentNode(

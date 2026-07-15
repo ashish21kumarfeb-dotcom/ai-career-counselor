@@ -108,19 +108,23 @@ export function buildAgentGraph(overrides: GraphOverrides = {}) {
     )
     .addNode(
       "career_data_agent",
-      traced("career_data_agent", "tool", careerDataAgentNode, (p, s) => {
-        // Which tools actually ran is inferred from the plan vs. what came back:
-        // a planned-but-empty section means the tool ran and found nothing; a
-        // section that was never planned means the gate vetoed the tool. Phase 4
-        // replaces this inference with the tool registry's own report.
-        const planned = s.plan?.sections ?? [];
+      traced("career_data_agent", "tool", careerDataAgentNode, (p) => {
+        // Transport is REPORTED by the agent (toolCalls), not inferred here. A
+        // tool that fell back to a direct call because the MCP server was down is
+        // a degraded run, and the trace is the only thing standing between that
+        // and a demo claiming "runs on MCP".
         const cd = p.careerData;
+        const calls = cd?.toolCalls ?? [];
+        const ran = calls.filter((c) => c.transport !== "skipped");
+        const fellBack = ran.filter((c) => c.degradedReason);
         return {
-          summary: `rag: ${cd?.ragDocs.length ?? 0}, agencies: ${cd?.agencies.length ?? 0}, resources: ${cd?.resources.length ?? 0}, courses: ${cd?.courses.length ?? 0}`,
+          status: fellBack.length > 0 ? "degraded" : "ok",
+          summary:
+            `rag: ${cd?.ragDocs.length ?? 0}, agencies: ${cd?.agencies.length ?? 0}, resources: ${cd?.resources.length ?? 0}, courses: ${cd?.courses.length ?? 0}` +
+            (fellBack.length ? ` | MCP unavailable, ${fellBack.length} tool(s) fell back to direct` : ""),
           detail: {
-            transport: "direct", // Phase 4: "mcp" | "direct"
-            agencyToolRan: planned.includes("agencies"),
-            resourceToolRan: planned.includes("resources") || planned.includes("courses"),
+            toolCalls: calls.map((c) => `${c.tool}:${c.transport}${c.degradedReason ? " (degraded)" : ""}`),
+            degradedReasons: fellBack.map((c) => c.degradedReason),
             missingDataNotes: cd?.missingDataNotes ?? [],
           },
         };
@@ -132,14 +136,30 @@ export function buildAgentGraph(overrides: GraphOverrides = {}) {
         // Second pass: re-typed as "regeneration" so the loop is visible in the
         // trace without correlating repeated step names by hand.
         const isRegen = (p.regenerationAttempts ?? 0) > s.regenerationAttempts;
-        const drafted = Object.keys(p.recommendation?.draftSections ?? {});
+        const d = p.recommendation?.draftSections ?? {};
+        const drafted = Object.keys(d);
+
+        // runRecommendationAgent SWALLOWS an LLM failure and assembles DB sections
+        // only, so a planned text section still appears — as an empty string or an
+        // empty array. Reporting that as "ok" is precisely the silent degradation
+        // this trace exists to catch: the section key is there, the content is not.
+        const planned = s.plan?.sections ?? [];
+        const emptyText = [
+          planned.includes("ai_suggestion") && !d.ai_suggestion?.trim(),
+          planned.includes("roadmap") && (d.roadmap?.items.length ?? 0) === 0,
+          planned.includes("skill_focus") && (d.skill_focus?.length ?? 0) === 0,
+          planned.includes("next_steps") && (d.next_steps?.length ?? 0) === 0,
+        ].filter(Boolean).length;
+
         return {
           type: isRegen ? "regeneration" : "agent",
-          summary: isRegen
-            ? `regenerated after rejection: ${drafted.join(", ") || "(none)"}`
-            : `drafted: ${drafted.join(", ") || "(none)"}`,
+          status: emptyText > 0 ? "degraded" : "ok",
+          summary:
+            (isRegen ? `regenerated after rejection: ${drafted.join(", ") || "(none)"}` : `drafted: ${drafted.join(", ") || "(none)"}`) +
+            (emptyText > 0 ? ` | ${emptyText} planned text section(s) came back EMPTY — text generation failed` : ""),
           detail: {
             draftSections: drafted,
+            emptyPlannedTextSections: emptyText,
             attempt: (p.regenerationAttempts ?? 0) + 1,
             actingOnIssues: isRegen ? s.verificationResult?.issues : undefined,
           },

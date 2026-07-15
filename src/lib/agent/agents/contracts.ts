@@ -72,6 +72,36 @@ export interface ProfileAgentInput {
 // --- 2. Career Data Agent -----------------------------------------------------
 // Responsibility: retrieve ONLY verified DB/tool data — RAG grounding docs plus,
 // when the plan asks for them, resource/course links and agencies. Never invents.
+// The RAW row shapes the MCP tools return over the wire. These mirror
+// RetrievedAgency / RetrievedDocument, and exist so the client can re-validate a
+// JSON payload at the protocol boundary rather than trusting it — MCP hands back
+// text, so without this the typed rows would be a cast, not a fact.
+// (mcpDocumentRowSchema is retrievedDocSchema; aliased so the boundary's intent
+// reads clearly at the call site.)
+export const mcpAgencyRowSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  location: z.string().nullable(),
+  services: z.string().nullable(),
+  website: z.string().nullable(),
+  sourceUrl: z.string().nullable(),
+});
+export const mcpDocumentRowSchema = retrievedDocSchema;
+
+// What actually happened for one tool on one run: which transport carried it,
+// whether it succeeded, and why it degraded if it did. Required (not optional) so
+// every construction site has to state it — an audit field that can be omitted
+// gets omitted, and "did this really run over MCP?" is exactly the question a
+// reviewer asks first.
+export const toolCallRecordSchema = z.object({
+  tool: z.string(),
+  transport: z.enum(["mcp", "direct", "skipped"]),
+  ok: z.boolean(),
+  items: z.number(),
+  degradedReason: z.string().optional(),
+});
+export type ToolCallRecord = z.infer<typeof toolCallRecordSchema>;
+
 export const careerDataAgentOutputSchema = z.object({
   ragDocs: z.array(retrievedDocSchema),
   resources: z.array(resourceItemSchema),
@@ -79,6 +109,9 @@ export const careerDataAgentOutputSchema = z.object({
   agencies: z.array(agencyItemSchema),
   sourcesUsed: z.array(sourceRefSchema),
   missingDataNotes: z.array(z.string()),
+  // One record per retrieval tool this run considered — the evidence behind any
+  // claim about how tools executed.
+  toolCalls: z.array(toolCallRecordSchema),
 });
 
 export type CareerDataAgentOutput = z.infer<typeof careerDataAgentOutputSchema>;

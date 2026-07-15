@@ -62,6 +62,7 @@ const careerData: CareerDataAgentOutput = {
   agencies: [{ name: "Acme Careers", location: "Delhi", services: "counselling", website: "https://acme", source: "src/acme" }],
   sourcesUsed: [{ id: "d1", type: "career_data", sourceUrl: "https://knowledge/1" }],
   missingDataNotes: [],
+  toolCalls: [],
 };
 
 const emptyCareerData: CareerDataAgentOutput = {
@@ -71,6 +72,7 @@ const emptyCareerData: CareerDataAgentOutput = {
   agencies: [],
   sourcesUsed: [],
   missingDataNotes: [],
+  toolCalls: [],
 };
 
 const text: TextSections = {

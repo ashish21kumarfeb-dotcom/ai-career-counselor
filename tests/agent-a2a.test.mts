@@ -165,7 +165,7 @@ try {
       userId: user.id,
       query: "zza2aagency counselling",
       plan: plan(["agencies"]),
-      careerData: { ragDocs: [], resources: [], courses: [], agencies: [realAgency], sourcesUsed: [], missingDataNotes: [] },
+      careerData: { ragDocs: [], resources: [], courses: [], agencies: [realAgency], sourcesUsed: [], missingDataNotes: [], toolCalls: [] },
       recommendation: { draftSections: { agencies: { items: [{ ...realAgency }, ghost] } } },
     });
     const out = { ...state, ...(await verificationAgentNode(state)) };

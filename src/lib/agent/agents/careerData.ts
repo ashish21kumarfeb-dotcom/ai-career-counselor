@@ -14,12 +14,13 @@
 // The userContext handed off from the Profile Agent nudges resource RANKING toward
 // the user's field/goal; it never grants inclusion on its own (relevance is decided
 // by the query's specific topic terms).
-import { searchDocuments, searchResources } from "../../documents/queries";
-import { searchAgencies } from "../../agencies/queries";
+import { searchDocuments, searchResources, type RetrievedDocument } from "../../documents/queries";
+import { searchAgencies, type RetrievedAgency } from "../../agencies/queries";
 import { agencyGate, resourceGate } from "../schema";
 import { buildDbSections } from "../sections";
-import { careerDataAgentOutputSchema } from "./contracts";
-import type { CareerDataAgentInput, CareerDataAgentOutput } from "./contracts";
+import { callTool, type ToolCallResult } from "../tools/mcpClient";
+import { careerDataAgentOutputSchema, mcpAgencyRowSchema, mcpDocumentRowSchema } from "./contracts";
+import type { CareerDataAgentInput, CareerDataAgentOutput, ToolCallRecord } from "./contracts";
 import type { UserContext } from "./contracts";
 
 // Profile-derived ranking terms: the user's skills, interests, goal, and current
@@ -53,24 +54,64 @@ export async function runCareerDataAgent(
 
   // RAG grounding always runs (user-scoped: global curated docs + this user's own
   // docs, never another user's). Resource/agency tools run only when planned+gated.
-  const [ragDocs, resourceDocs, agencyRows] = await Promise.all([
+  //
+  // The two GATED tools go through MCP; searchDocuments stays a direct call
+  // because it is user-scoped and the MCP boundary has no session identity yet.
+  // Every call is recorded in `toolCalls` with the transport that carried it, so
+  // "runs on MCP" is a claim the run can prove rather than one we assert.
+  const skipped = (): ToolCallResult<never> => ({ data: [], transport: "skipped" });
+
+  const [ragDocs, resourceResult, agencyResult] = await Promise.all([
     searchDocuments(query, userId).catch((e) => {
       console.error("Career Data Agent: searchDocuments failed:", e);
-      return [];
+      return [] as RetrievedDocument[];
     }),
     wantsResources
-      ? searchResources(query, 5, contextTerms).catch((e) => {
-          console.error("Career Data Agent: searchResources failed:", e);
-          return [];
-        })
-      : Promise.resolve([]),
+      ? callTool<RetrievedDocument>(
+          "searchResources",
+          { query, limit: 5, contextTerms },
+          mcpDocumentRowSchema,
+          () =>
+            searchResources(query, 5, contextTerms).catch((e) => {
+              console.error("Career Data Agent: searchResources failed:", e);
+              return [];
+            })
+        )
+      : Promise.resolve(skipped() as ToolCallResult<RetrievedDocument>),
     wantsAgencies
-      ? searchAgencies(query).catch((e) => {
-          console.error("Career Data Agent: searchAgencies failed:", e);
-          return [];
-        })
-      : Promise.resolve([]),
+      ? callTool<RetrievedAgency>(
+          "searchAgencies",
+          { query, limit: 5 },
+          mcpAgencyRowSchema,
+          () =>
+            searchAgencies(query).catch((e) => {
+              console.error("Career Data Agent: searchAgencies failed:", e);
+              return [];
+            })
+        )
+      : Promise.resolve(skipped() as ToolCallResult<RetrievedAgency>),
   ]);
+
+  const resourceDocs = resourceResult.data;
+  const agencyRows = agencyResult.data;
+
+  const toolCalls: ToolCallRecord[] = [
+    { tool: "searchDocuments", transport: "direct", ok: true, items: ragDocs.length },
+    {
+      tool: "searchResources",
+      transport: resourceResult.transport,
+      ok: resourceResult.transport !== "skipped" && !resourceResult.degradedReason,
+      items: resourceDocs.length,
+      degradedReason: resourceResult.degradedReason,
+    },
+    {
+      tool: "searchAgencies",
+      transport: agencyResult.transport,
+      ok: agencyResult.transport !== "skipped" && !agencyResult.degradedReason,
+      items: agencyRows.length,
+      degradedReason: agencyResult.degradedReason,
+    },
+  ];
 
   // Reuse the shared, LLM-free mappers: partition resources vs courses and map
   // agencies to DB-sourced items. A planned-but-empty section carries a note.
@@ -98,6 +139,7 @@ export async function runCareerDataAgent(
     agencies,
     sourcesUsed,
     missingDataNotes,
+    toolCalls,
   };
 
   // Validate the output contract at the hand-off boundary. On the unexpected event

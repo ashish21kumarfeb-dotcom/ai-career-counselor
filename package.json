@@ -28,6 +28,8 @@
     "test:exec-plan": "tsx tests/agent-execution-plan.test.mts",
     "test:regen": "tsx tests/agent-regeneration.test.mts",
     "test:parse": "tsx tests/resume-parse.test.mts",
+    "mcp:server": "tsx mcp/server.ts",
+    "test:mcp": "tsx tests/agent-mcp.test.mts",
     "seed:documents": "tsx src/db/seed/documents.ts",
     "seed:agencies": "tsx src/db/seed/agencies.ts",
     "backfill:job-switcher": "tsx src/db/backfill/job-switcher-to-working-professional.ts",
@@ -36,6 +38,8 @@
   "dependencies": {
     "@langchain/core": "^1.2.2",
     "@langchain/langgraph": "^1.4.7",
+    "@langchain/mcp-adapters": "^1.1.3",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@neondatabase/serverless": "^1.1.0",
     "bcryptjs": "^3.0.3",
     "drizzle-orm": "^0.45.2",
