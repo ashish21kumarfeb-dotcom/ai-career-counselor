@@ -30,6 +30,9 @@ function makeState(query: string, sections: SectionName[]): AgentStateType {
   return {
     userId: "00000000-0000-0000-0000-000000000000",
     query,
+    runId: "",
+    trace: [],
+    recommendationId: undefined,
     persist: false,
     intent: "other",
     profile: undefined,

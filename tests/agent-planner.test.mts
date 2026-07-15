@@ -108,11 +108,19 @@ if (!process.env.GROQ_API_KEY) {
   console.log("\n== B. Live graph: gate invariants hold end-to-end ==");
   const FAKE_USER = "00000000-0000-0000-0000-000000000000"; // read-only; no such user is fine
 
+  // Returns the planned sections plus whether the planner LLM was actually
+  // available. When Groq is down or rate-limited the planner silently falls back
+  // to the gate-safe regex plan — which, by design, fails closed on agencies. The
+  // gate INVARIANTS below must still hold on a fallback plan, but the
+  // planner-QUALITY expectations cannot: there was no planner to judge. Skipping
+  // them beats a red suite that only means "the API is rate-limited".
   async function plan(query: string) {
     const out = await agentGraph.invoke({ userId: FAKE_USER, query, persist: false });
     const sections = out.plan?.sections ?? [];
-    console.log(`\n[${query}]\n  -> ${JSON.stringify(sections)}  (${out.plan?.reasoning ?? ""})`);
-    return sections;
+    const reasoning = out.plan?.reasoning ?? "";
+    const degraded = reasoning.startsWith("fallback plan");
+    console.log(`\n[${query}]\n  -> ${JSON.stringify(sections)}  (${reasoning})`);
+    return { sections, degraded };
   }
 
   const cases: Array<{ q: string; expectAgencies?: boolean; expectResourcesOrCourses?: boolean }> = [
@@ -125,16 +133,34 @@ if (!process.env.GROQ_API_KEY) {
     { q: "Show me courses", expectAgencies: false, expectResourcesOrCourses: true },
   ];
 
+  let degradedRuns = 0;
   for (const c of cases) {
-    const s = await plan(c.q);
-    // HARD invariants (deterministic, independent of LLM wording):
-    if (s.includes("agencies")) check(`[${c.q.slice(0, 32)}…] agencies ⟹ agencyGate`, agencyGate(c.q), JSON.stringify(s));
-    if (s.includes("resources") || s.includes("courses")) check(`[${c.q.slice(0, 32)}…] resources/courses ⟹ resourceGate`, resourceGate(c.q), JSON.stringify(s));
-    check(`[${c.q.slice(0, 32)}…] returns ≥1 section`, s.length >= 1, JSON.stringify(s));
+    const { sections: s, degraded } = await plan(c.q);
+    const tag = c.q.slice(0, 32);
+    // HARD invariants (deterministic, independent of LLM wording). These MUST
+    // hold even on a fallback plan — that is the whole point of the gates.
+    if (s.includes("agencies")) check(`[${tag}…] agencies ⟹ agencyGate`, agencyGate(c.q), JSON.stringify(s));
+    if (s.includes("resources") || s.includes("courses")) check(`[${tag}…] resources/courses ⟹ resourceGate`, resourceGate(c.q), JSON.stringify(s));
+    check(`[${tag}…] returns ≥1 section`, s.length >= 1, JSON.stringify(s));
+
+    if (degraded) {
+      // Planner unavailable. Assert the fail-closed contract instead of planner
+      // quality: a fallback plan must never surface agencies, however explicitly
+      // the query asked for them.
+      degradedRuns++;
+      check(`[${tag}…] degraded plan fails closed on agencies`, !s.includes("agencies"), JSON.stringify(s));
+      continue;
+    }
+
     // Expected behavior (relies on planner quality for clear asks):
-    if (c.expectAgencies === true) check(`[${c.q.slice(0, 32)}…] includes agencies`, s.includes("agencies"), JSON.stringify(s));
-    if (c.expectAgencies === false) check(`[${c.q.slice(0, 32)}…] excludes agencies`, !s.includes("agencies"), JSON.stringify(s));
-    if (c.expectResourcesOrCourses) check(`[${c.q.slice(0, 32)}…] includes resources/courses`, s.includes("resources") || s.includes("courses"), JSON.stringify(s));
+    if (c.expectAgencies === true) check(`[${tag}…] includes agencies`, s.includes("agencies"), JSON.stringify(s));
+    if (c.expectAgencies === false) check(`[${tag}…] excludes agencies`, !s.includes("agencies"), JSON.stringify(s));
+    if (c.expectResourcesOrCourses) check(`[${tag}…] includes resources/courses`, s.includes("resources") || s.includes("courses"), JSON.stringify(s));
+  }
+  if (degradedRuns > 0) {
+    console.log(`\n  NOTE: ${degradedRuns}/${cases.length} live runs used the FALLBACK plan (planner LLM`);
+    console.log(`  unavailable — commonly a Groq rate limit). Gate invariants and the fail-closed`);
+    console.log(`  contract were asserted; planner-quality expectations were not exercised.`);
   }
 }
 

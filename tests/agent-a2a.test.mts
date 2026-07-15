@@ -48,6 +48,9 @@ function baseState(over: Partial<AgentStateType>): AgentStateType {
   return {
     userId: "",
     query: "",
+    runId: "",
+    trace: [],
+    recommendationId: undefined,
     persist: false,
     intent: "career_advice",
     profile: undefined,

@@ -29,6 +29,9 @@ function makeState(over: Partial<AgentStateType>): AgentStateType {
   return {
     userId: "",
     query: "",
+    runId: "",
+    trace: [],
+    recommendationId: undefined,
     persist: true,
     intent: "other",
     profile: undefined,

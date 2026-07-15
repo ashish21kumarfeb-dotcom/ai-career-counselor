@@ -24,6 +24,7 @@
     "test:reco": "tsx tests/agent-recommendation.test.mts",
     "test:verify": "tsx tests/agent-verification.test.mts",
     "test:a2a": "tsx tests/agent-a2a.test.mts",
+    "test:trace": "tsx tests/agent-trace.test.mts",
     "test:parse": "tsx tests/resume-parse.test.mts",
     "seed:documents": "tsx src/db/seed/documents.ts",
     "seed:agencies": "tsx src/db/seed/agencies.ts",

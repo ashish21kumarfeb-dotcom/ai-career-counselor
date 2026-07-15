@@ -24,7 +24,7 @@ export async function logNode(
       })),
     ];
 
-    await logRecommendation({
+    const row = await logRecommendation({
       userId: state.userId,
       query: state.query,
       finalAnswer: JSON.stringify(state.sections ?? {}),
@@ -32,6 +32,8 @@ export async function logNode(
       sourcesUsed: sourcesUsed.length > 0 ? sourcesUsed : undefined,
       evaluationScore: state.evaluation,
     });
+    // Surfaced so the trace row can foreign-key to this recommendation.
+    return { recommendationId: row?.id };
   } catch (error) {
     console.error("Agent ai_recommendations logging failed:", error);
   }
