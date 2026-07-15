@@ -29,6 +29,17 @@ export type ToolResults = {
   resources: RetrievedDocument[];
 };
 
+// What the memory node actually did. `status: "ok"` with factsWritten 0 is a real
+// result (the message stated nothing durable); "failed" means the extractor or
+// the write could not run. Conflating the two is what let a rate-limited
+// extraction trace as a success.
+export type MemoryUpdateReport = {
+  status: "ok" | "failed" | "skipped";
+  factsExtracted: number;
+  factsWritten: number;
+  error?: string;
+};
+
 const lastValue = <T>(_prev: T, next: T): T => next;
 
 export const AgentState = Annotation.Root({
@@ -85,6 +96,9 @@ export const AgentState = Annotation.Root({
   // Id of the ai_recommendations row the log node wrote, so the trace row can
   // foreign-key to it. Undefined when persist:false or the write failed.
   recommendationId: Annotation<string | undefined>({ reducer: lastValue, default: () => undefined }),
+
+  // What the memory node did, so the trace reports it rather than assuming it.
+  memoryUpdate: Annotation<MemoryUpdateReport | undefined>({ reducer: lastValue, default: () => undefined }),
 
   // --- Explicit A2A agent output envelopes (the messages passed between the four
   // agents). Each agent node writes exactly one of these; the next node builds its

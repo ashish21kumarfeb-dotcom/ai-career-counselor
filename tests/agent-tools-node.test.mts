@@ -33,6 +33,7 @@ function makeState(query: string, sections: SectionName[]): AgentStateType {
     runId: "",
     trace: [],
     recommendationId: undefined,
+    memoryUpdate: undefined,
     persist: false,
     intent: "other",
     profile: undefined,

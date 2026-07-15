@@ -32,6 +32,7 @@ function makeState(over: Partial<AgentStateType>): AgentStateType {
     runId: "",
     trace: [],
     recommendationId: undefined,
+    memoryUpdate: undefined,
     persist: true,
     intent: "other",
     profile: undefined,

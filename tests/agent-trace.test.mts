@@ -36,6 +36,7 @@ function makeState(over: Partial<AgentStateType>): AgentStateType {
     runId: "",
     trace: [],
     recommendationId: undefined,
+    memoryUpdate: undefined,
     persist: false,
     intent: "other",
     profile: undefined,
@@ -141,6 +142,34 @@ console.log("\n== A. traced() wrapper ==");
   check("survives a throwing summarizer", (out.trace as TraceEvent[]).length === 1);
   check("records the summarizer failure as degraded", (out.trace as TraceEvent[])[0].status === "degraded");
   check("still returns the node's partial", out.intent === "other");
+}
+
+console.log("\n== A. memory node reports its outcome (it cannot be inferred) ==");
+{
+  // The old summarizer read state.persist only, so it could see "did we intend to
+  // run?" and nothing else. extractMemories swallowed its own LLM error into an
+  // empty array, making a rate-limited extraction indistinguishable from "the user
+  // said nothing durable" — and the trace called both "memory extraction run", ok.
+  const { memoryNode } = await import("../src/lib/agent/nodes/memory");
+  const out = await memoryNode(makeState({ persist: false }));
+  check("persist:false reports skipped", out.memoryUpdate?.status === "skipped", JSON.stringify(out.memoryUpdate));
+  check("skipped is not a failure", out.memoryUpdate?.factsWritten === 0);
+}
+{
+  // The distinction the whole fix exists for: `available:false` means the
+  // extractor could not RUN, which must never read as "nothing to store".
+  const { extractMemoriesDetailed } = await import("../src/lib/ai/memory");
+  const detailed = await extractMemoriesDetailed("Cool, thanks, I'll check it later.");
+  if (detailed.available) {
+    check("a non-durable message extracts cleanly (available, 0 facts)", detailed.facts.length === 0, JSON.stringify(detailed.facts));
+    check("available:true carries no error", detailed.error === undefined);
+  } else {
+    // Quota exhausted — assert the honest shape instead of a fact count.
+    check("unavailable extractor reports available:false, not an empty success", detailed.available === false);
+    check("unavailable extractor carries the reason", !!detailed.error, detailed.error?.slice(0, 60));
+    console.log("  NOTE: extractor unavailable (commonly a Groq rate limit) — this IS the case");
+    console.log("  the fix is about: it now reports failure instead of an empty success.");
+  }
 }
 
 console.log("\n== A. deriveFinalStatus (smoke — full matrix lives in test:regen) ==");

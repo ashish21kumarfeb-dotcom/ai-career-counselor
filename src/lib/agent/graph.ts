@@ -188,10 +188,32 @@ export function buildAgentGraph(overrides: GraphOverrides = {}) {
     )
     .addNode(
       "update_memory",
-      traced("update_memory", "agent", memoryNode, (_p, s) => ({
-        status: s.persist ? "ok" : "skipped",
-        summary: s.persist ? "memory extraction run" : "skipped (persist:false)",
-      }))
+      // Status is REPORTED by the node, not inferred from state.persist. The old
+      // summarizer could only see "did we intend to run?", so a rate-limited
+      // extraction — which extractMemories swallowed into an empty array — traced
+      // as "memory extraction run", ok. Memory is best-effort, but a trace that
+      // quietly reports a failure as a success is the one thing it must not do.
+      traced("update_memory", "agent", memoryNode, (p) => {
+        const m = p.memoryUpdate;
+        if (!m || m.status === "skipped") {
+          return { status: "skipped", summary: "skipped (persist:false)" };
+        }
+        if (m.status === "failed") {
+          return {
+            status: "degraded",
+            summary: `memory update FAILED — nothing stored${m.factsWritten > 0 ? ` after ${m.factsWritten} write(s)` : ""}`,
+            detail: { error: m.error, factsExtracted: m.factsExtracted, factsWritten: m.factsWritten },
+          };
+        }
+        return {
+          status: "ok",
+          // 0 facts is a real result, not a failure: most messages state nothing durable.
+          summary: m.factsWritten > 0
+            ? `${m.factsWritten} durable fact(s) stored`
+            : "no durable facts in this message",
+          detail: { factsExtracted: m.factsExtracted, factsWritten: m.factsWritten },
+        };
+      })
     )
     .addNode(
       "evaluate",
