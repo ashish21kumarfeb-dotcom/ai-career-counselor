@@ -41,16 +41,27 @@ export function buildAgentGraph() {
     .addNode(
       "planner",
       traced("planner", "plan", plannerNode, (p) => {
-        // The planner is fault-tolerant: on LLM/parse failure it silently falls
-        // back to a gate-safe regex plan. That fallback is a DEGRADED run, not a
-        // successful one, and its reasoning string is the only way to tell —
-        // which is exactly the kind of thing this trace exists to surface.
-        const reasoning = p.plan?.reasoning ?? "";
-        const degraded = reasoning.startsWith("fallback plan");
+        // The planner is fault-tolerant: on LLM/parse failure it falls back to a
+        // gate-safe regex plan. That fallback is a DEGRADED run, not a successful
+        // one — `degraded` is now an explicit field rather than something to be
+        // inferred from a reasoning string.
+        const ep = p.executionPlan;
+        const vetoed = ep?.riskChecks.filter((r) => r.action === "veto") ?? [];
         return {
-          status: degraded ? "degraded" : "ok",
-          summary: `sections: ${p.plan?.sections.join(", ") ?? "(none)"}`,
-          detail: { sections: p.plan?.sections, reasoning },
+          status: ep?.degraded ? "degraded" : "ok",
+          summary: `goal: ${ep?.goal ?? "(none)"} | sections: ${p.plan?.sections.join(", ") ?? "(none)"}`,
+          detail: {
+            goal: ep?.goal,
+            sections: p.plan?.sections,
+            agents: ep?.agents,
+            toolsAllowed: ep?.tools.filter((t) => t.allowed).map((t) => t.tool),
+            toolsVetoed: ep?.tools.filter((t) => !t.allowed).map((t) => t.tool),
+            risksVetoed: vetoed.map((r) => r.check),
+            // Where governance overruled the model. The audit value of the run.
+            planIssues: ep?.planIssues ?? [],
+            degraded: ep?.degraded,
+            reasoning: ep?.reasoning,
+          },
         };
       })
     )

@@ -45,9 +45,7 @@ export async function persistTraceNode(
       trace: state.trace,
       finalStatus: deriveFinalStatus(state),
       recommendationId: state.recommendationId,
-      // executionPlan lands here in Phase 2. Until then the section plan is the
-      // closest honest equivalent, and it is already captured in the planner's
-      // trace event — so this stays null rather than pretending to be a plan.
+      executionPlan: state.executionPlan,
     });
   } catch (error) {
     console.error("Agent trace persistence failed:", error);

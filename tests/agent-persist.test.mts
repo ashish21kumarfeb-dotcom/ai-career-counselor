@@ -38,6 +38,7 @@ function makeState(over: Partial<AgentStateType>): AgentStateType {
     memory: [],
     ragDocs: [],
     plan: undefined,
+    executionPlan: undefined,
     toolResults: { agencies: [], resources: [] },
     sections: undefined,
     verification: undefined,

@@ -16,6 +16,7 @@ import type {
   VerificationAgentOutput,
 } from "./agents/contracts";
 import type { TraceEvent } from "./trace/types";
+import type { ExecutionPlan } from "./plan/types";
 
 // The user_profiles row (or undefined if the user has no profile yet), reused
 // verbatim from the existing query helper without a runtime import.
@@ -58,8 +59,15 @@ export const AgentState = Annotation.Root({
   memory: Annotation<MemoryEntry[]>({ reducer: lastValue, default: () => [] }),
   ragDocs: Annotation<RetrievedDocument[]>({ reducer: lastValue, default: () => [] }),
 
-  // Planner output: which sections this query needs (post-gate).
+  // Planner output: which sections this query needs (post-gate). Kept in its
+  // original shape — /api/agent-chat and the UI read it — and now derived FROM
+  // executionPlan through the same finalizePlan() gates, so gating cannot drift.
   plan: Annotation<AgentPlan | undefined>({ reducer: lastValue, default: () => undefined }),
+
+  // The full execution plan: goal, required context, agents, tools, risk checks,
+  // expected sections. The artifact the workflow is judged on; persisted to
+  // agent_runs.execution_plan.
+  executionPlan: Annotation<ExecutionPlan | undefined>({ reducer: lastValue, default: () => undefined }),
 
   // DB tool output (agency + resource lookups).
   toolResults: Annotation<ToolResults>({
