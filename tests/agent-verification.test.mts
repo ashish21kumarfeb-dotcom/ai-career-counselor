@@ -181,5 +181,96 @@ console.log("\n== sanitizeDraft is pure (input unchanged) ==");
   check("sanitized copy has the invented URL removed", (finalSections.resources?.items ?? []).every((r) => r.url !== "https://evil"));
 }
 
+// --- Free-text provider invention (the prose channel) --------------------------
+// agencyGate can veto the agencies SECTION while the LLM names a provider in a
+// sentence. The DB-backed subset checks never read prose, and the soft check is
+// allowed to be unavailable — so this must be caught deterministically.
+const noAgencies: CareerDataAgentOutput = { ...careerData, agencies: [] };
+
+console.log("\n== invented provider named in prose -> removed ==");
+{
+  // The gap-1 scenario: a plain career question, agencyGate vetoed, zero verified
+  // agencies — yet the model names a firm. softOk = the soft check is WORKING and
+  // says safe, proving the deterministic layer catches this on its own.
+  const draft: ResponseSections = {
+    ai_suggestion: "Learn SQL and Power BI. You could also reach out to ABC Career Consultancy in Pune for placement help.",
+    roadmap: { items: ["Learn SQL"], suggested: true },
+  };
+  const out = await runVerificationAgent(
+    { query: "how do I switch from testing to data analysis?", plan: plan(["ai_suggestion", "roadmap"]), draftSections: draft, careerData: noAgencies },
+    { softCheck: softOk }
+  );
+  check("approved false", out.approved === false);
+  check("provider no longer in prose", !(out.finalSections.ai_suggestion ?? "").includes("ABC Career Consultancy"));
+  check("prose replaced with safe fallback", out.finalSections.ai_suggestion === SAFE_FALLBACK_TEXT);
+  check("issue names the invented provider", out.issues.some((i) => i.includes("ABC Career Consultancy")), JSON.stringify(out.issues));
+}
+{
+  // Same, with the soft check UNAVAILABLE — the exact hole: previously approved.
+  const draft: ResponseSections = { ai_suggestion: "Consider contacting Bright Futures Placements to speed this up." };
+  const out = await runVerificationAgent(
+    { query: "how do I move into analytics?", plan: plan(["ai_suggestion"]), draftSections: draft, careerData: noAgencies },
+    { softCheck: softUnavailable }
+  );
+  check("caught with soft check unavailable", out.approved === false);
+  check("provider removed without the soft check", !(out.finalSections.ai_suggestion ?? "").includes("Bright Futures Placements"));
+}
+{
+  // Prose is scanned in every free-text section, not just ai_suggestion.
+  const draft: ResponseSections = { ai_suggestion: "Learn SQL.", next_steps: ["Call TalentEdge Consulting this week"] };
+  const out = await runVerificationAgent(
+    { query: "how do I move into analytics?", plan: plan(["ai_suggestion", "next_steps"]), draftSections: draft, careerData: noAgencies },
+    { softCheck: softOk }
+  );
+  check("provider in next_steps caught", out.approved === false, JSON.stringify(out.issues));
+  check("next_steps removed", out.finalSections.next_steps === undefined);
+}
+{
+  const draft: ResponseSections = { ai_suggestion: "Try ABC Career Consultancy." };
+  const blank: CareerDataAgentOutput = {
+    ...careerData,
+    agencies: [{ name: "   ", location: null, services: null, website: null, source: null }],
+  };
+  const out = await runVerificationAgent(
+    { query: "how do I move into analytics?", plan: plan(["ai_suggestion"]), draftSections: draft, careerData: blank },
+    { softCheck: softOk }
+  );
+  check("blank verified name does not allowlist everything", out.approved === false, JSON.stringify(out.issues));
+}
+
+console.log("\n== verified / generic provider mentions are NOT flagged ==");
+{
+  // Naming an agency that IS a verified record is grounded — it must survive.
+  const draft = cleanDraft();
+  draft.ai_suggestion = "Acme Careers offers counselling in Delhi.";
+  const out = await runVerificationAgent(input(ALL, draft), { softCheck: softOk });
+  check("verified provider kept", out.approved === true, JSON.stringify(out.issues));
+  check("prose untouched", out.finalSections.ai_suggestion === "Acme Careers offers counselling in Delhi.");
+}
+{
+  // Generic advice is the planner's call to gate, not an invented record.
+  const draft: ResponseSections = {
+    ai_suggestion: "Career Counsellors can help, and Top Placement Agencies exist in most cities.",
+  };
+  const out = await runVerificationAgent(
+    { query: "how do I move into analytics?", plan: plan(["ai_suggestion"]), draftSections: draft, careerData: noAgencies },
+    { softCheck: softOk }
+  );
+  check("generic phrasing not flagged as a name", out.approved === true, JSON.stringify(out.issues));
+}
+{
+  // A verified long name still covers prose that shortens it.
+  const longName: CareerDataAgentOutput = {
+    ...careerData,
+    agencies: [{ name: "Pune Career Consultancy Pvt Ltd", location: "Pune", services: "counselling", website: null, source: null }],
+  };
+  const draft: ResponseSections = { ai_suggestion: "Pune Career Consultancy can help." };
+  const out = await runVerificationAgent(
+    { query: "suggest a counsellor", plan: plan(["ai_suggestion"]), draftSections: draft, careerData: longName },
+    { softCheck: softOk }
+  );
+  check("shortened verified name allowed", out.approved === true, JSON.stringify(out.issues));
+}
+
 console.log(`\n================  ${passed} passed, ${failed} failed  ================`);
 process.exit(failed === 0 ? 0 : 1);

@@ -5,6 +5,7 @@
 // Run: npm run test:planner
 import "dotenv/config";
 import { agencyGate, resourceGate, finalizePlan, type PlannerNeeds } from "../src/lib/agent/schema";
+import { fallbackNeeds } from "../src/lib/agent/nodes/planner";
 import { agentGraph } from "../src/lib/agent/graph";
 
 let passed = 0;
@@ -58,6 +59,35 @@ console.log("\n== A. Unit: finalizePlan gating ==");
 {
   const p = finalizePlan(allTrue, "I want to become a data analyst. Suggest roadmap and courses.");
   check("stable section order", JSON.stringify(p.sections) === JSON.stringify(["ai_suggestion","roadmap","resources","courses","skill_focus","agencies","next_steps"].filter((s) => p.sections.includes(s as never))), JSON.stringify(p.sections));
+}
+
+// The fallback plan must FAIL CLOSED on agencies. finalizePlan gates agencies on
+// `needs.agencies && agencyGate(query)`; if the fallback derived needs.agencies
+// from the gate, that AND would collapse to `gate && gate` and a lone keyword
+// would push agencies at a user who never asked for a provider.
+console.log("\n== A. Unit: fallback plan fails closed on agencies ==");
+{
+  // Every query here PASSES agencyGate — including an explicit ask. With the
+  // planner's judgment gone, none of them may surface agencies.
+  const gatePassing = [
+    "what guidance do you have for a fresher?",   // gate hit, but NOT asking for a provider
+    "I'm a management consultant looking to switch to product",
+    "I want to become a career coach",
+    "can you suggest a career counsellor?",        // genuine ask: still fails closed
+  ];
+  for (const q of gatePassing) {
+    check(`[${q.slice(0, 34)}…] agencyGate passes (precondition)`, agencyGate(q) === true);
+    check(`[${q.slice(0, 34)}…] fallback needs.agencies false`, fallbackNeeds(q).needs.agencies === false);
+    const p = finalizePlan(fallbackNeeds(q), q);
+    check(`[${q.slice(0, 34)}…] fallback plan excludes agencies`, !p.sections.includes("agencies"), JSON.stringify(p.sections));
+    check(`[${q.slice(0, 34)}…] still answers (≥1 section)`, p.sections.length >= 1, JSON.stringify(p.sections));
+  }
+}
+{
+  // The rest of the fallback still works — failing closed is scoped to agencies.
+  const p = finalizePlan(fallbackNeeds("how do I learn SQL for a data analyst role?"), "how do I learn SQL for a data analyst role?");
+  check("fallback keeps ai_suggestion", p.sections.includes("ai_suggestion"), JSON.stringify(p.sections));
+  check("fallback keeps resources on a learning query", p.sections.includes("resources"), JSON.stringify(p.sections));
 }
 
 // ---------------------------------------------------------------------------

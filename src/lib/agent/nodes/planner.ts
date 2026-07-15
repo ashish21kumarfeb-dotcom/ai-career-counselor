@@ -7,7 +7,6 @@ import { getGroq, CHAT_MODEL } from "../../ai/client";
 import {
   plannerNeedsSchema,
   finalizePlan,
-  agencyGate,
   resourceGate,
   type PlannerNeeds,
 } from "../schema";
@@ -33,7 +32,16 @@ Respond ONLY with a JSON object of this exact shape:
 {"needs":{"aiSuggestion":bool,"roadmap":bool,"resources":bool,"courses":bool,"skillFocus":bool,"agencies":bool,"nextSteps":bool},"reasoning":"one short sentence"}`;
 
 // Gate-safe fallback used when the LLM call or its output fails validation.
-function fallbackNeeds(query: string): PlannerNeeds {
+//
+// `agencies` is hard-coded false rather than derived from agencyGate(query).
+// finalizePlan gates the section on `needs.agencies && agencyGate(query)` — two
+// independent keys: the planner's judgment and the deterministic gate. Deriving
+// needs.agencies FROM the gate collapses that AND into `gate && gate`, leaving a
+// single keyword enough to push agencies at a user who never asked for a provider
+// ("what guidance do you have?" matches). With the planner's judgment unavailable,
+// the sensitive section fails closed; the rest of the answer is unaffected.
+// Exported for tests.
+export function fallbackNeeds(query: string): PlannerNeeds {
   return {
     needs: {
       aiSuggestion: true,
@@ -41,7 +49,7 @@ function fallbackNeeds(query: string): PlannerNeeds {
       resources: resourceGate(query),
       courses: /\b(course\w*|certif\w*|training)\b/i.test(query),
       skillFocus: /\b(skill\w*|learn\w*|roadmap|become|switch|transition|prepar\w*|gap)\b/i.test(query),
-      agencies: agencyGate(query),
+      agencies: false,
       nextSteps: false,
     },
     reasoning: "fallback plan (planner LLM unavailable or returned invalid output)",
