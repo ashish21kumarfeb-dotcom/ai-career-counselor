@@ -35,6 +35,17 @@ check("agencyGate true for 'any career counsellor?'", agencyGate("I am confused.
 check("agencyGate true for 'which agencies can help'", agencyGate("which agencies can help?"));
 check("agencyGate false for 'what career path should I follow?'", !agencyGate("what career path should I follow?"));
 check("agencyGate false for a bare 'help me choose'", !agencyGate("can you help me choose a career?"));
+// Provider nouns from classifyIntent's agency_search definition. Omitting these
+// vetoed asks the classifier itself labels agency_search.
+check("agencyGate true for 'find me a recruiter'", agencyGate("find me a recruiter"));
+check("agencyGate true for 'recruitment consultants'", agencyGate("any good recruitment firms?"));
+check("agencyGate true for 'placement services near Pune'", agencyGate("any placement services near Pune?"));
+check("agencyGate true for 'headhunter'", agencyGate("can a headhunter help me?"));
+check("agencyGate true for 'staffing firm'", agencyGate("is a staffing firm worth it?"));
+// Still a veto for asks that name no provider — the widening is category-complete,
+// not category-broadening.
+check("agencyGate false for 'how do I get hired at Google?'", !agencyGate("how do I get hired at Google?"));
+check("agencyGate false for 'what skills should I learn?'", !agencyGate("what skills should I learn?"));
 check("resourceGate true for 'suggest roadmap and courses'", resourceGate("suggest roadmap and courses"));
 check("resourceGate true for 'how do I switch career in 6 months'", resourceGate("how do I switch career in 6 months?"));
 check("resourceGate false for 'show me agencies'", !resourceGate("show me agencies"));
