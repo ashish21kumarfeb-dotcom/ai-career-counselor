@@ -176,7 +176,36 @@ export function sanitizeDraft(
     }
   }
 
-  // 5. Free text must not NAME a provider that no verified record backs. There is
+  // 5. Every PLANNED free-text section must actually contain something.
+  //
+  // runRecommendationAgent swallows an LLM failure and assembles the DB sections
+  // alone, so assembleSections still emits the planned key — as "" or []. The
+  // section is present and empty, which every check above is blind to (there is
+  // nothing invented to remove), and runSoftCheck's `hasFreeText` guard then reads
+  // the empty draft as "no free text to verify" and passes it as trivially fine.
+  // An empty answer was therefore APPROVED — the one failure mode most deserving
+  // of the regeneration loop was the one that never triggered it.
+  //
+  // Deterministic by necessity: this must hold when the soft check is unavailable,
+  // which is exactly when text generation is most likely to have failed too.
+  // Nothing is sanitized — there is nothing to remove — but the hard issue flips
+  // `approved`, which routes to a regeneration and, failing that, to a safe
+  // summary. Both beat shipping an empty section.
+  //
+  // Runs BEFORE the invented-provider check below: that check DELETES free text,
+  // so the reverse order would report its own sanitization as empty output.
+  const emptyPlanned: SectionName[] = [];
+  if (planned.has("ai_suggestion") && !finalSections.ai_suggestion?.trim()) emptyPlanned.push("ai_suggestion");
+  if (planned.has("roadmap") && (finalSections.roadmap?.items.length ?? 0) === 0) emptyPlanned.push("roadmap");
+  if (planned.has("skill_focus") && (finalSections.skill_focus?.length ?? 0) === 0) emptyPlanned.push("skill_focus");
+  if (planned.has("next_steps") && (finalSections.next_steps?.length ?? 0) === 0) emptyPlanned.push("next_steps");
+  if (emptyPlanned.length > 0) {
+    hardIssues.push(
+      `Planned free-text section(s) came back empty: ${emptyPlanned.join(", ")}. Text generation produced no content.`
+    );
+  }
+
+  // 6. Free text must not NAME a provider that no verified record backs. There is
   // nothing to subset the prose against, so the remedy is the one the soft check
   // already uses — replace the free text with the safe summary — but decided here,
   // deterministically, so it holds when the soft check is unavailable.
@@ -287,11 +316,18 @@ export async function runSoftCheck(
 // itself the signal that a regeneration has something to act on.
 export function buildRecommendedFix(issues: string[]): string | undefined {
   if (issues.length === 0) return undefined;
-  return [
+  const parts: string[] = [];
+  // An empty draft and an ungrounded one need opposite advice: telling a model
+  // that produced nothing "do not invent things" is the wrong instruction first.
+  if (issues.some((i) => i.startsWith("Planned free-text section(s) came back empty"))) {
+    parts.push("Produce real content for EVERY requested section — an empty or omitted section is not an answer.");
+  }
+  parts.push(
     "Rewrite the free-text sections so that every one of the problems below is gone.",
     "Use ONLY the agencies, courses and links supplied in the context — if the context lists none, name none.",
-    "Do not invent providers, companies, statistics or salaries, and do not guarantee jobs, interviews or outcomes.",
-  ].join(" ");
+    "Do not invent providers, companies, statistics or salaries, and do not guarantee jobs, interviews or outcomes."
+  );
+  return parts.join(" ");
 }
 
 // --- Agent entrypoint ----------------------------------------------------------

@@ -225,7 +225,11 @@ if (!process.env.DATABASE_URL) {
       check("live run writes exactly one agent_runs row", !!row);
       check("row links to the ai_recommendations row", !!row?.recommendationId);
       check("row carries the query", row?.query === "How do I move from manual testing into data analysis?");
-      check("row finalStatus is a real status", ["approved", "corrected"].includes(row?.finalStatus ?? ""));
+      // Phase 1 listed only approved/corrected. "corrected" is now unreachable
+      // (rejection routes to the loop instead of shipping), and a degraded run —
+      // e.g. an empty draft from a rate-limited LLM — legitimately ends in
+      // "fallback". A completed run must never be "failed".
+      check("row finalStatus is a real completed status", ["approved", "regenerated", "fallback"].includes(row?.finalStatus ?? ""), row?.finalStatus);
 
       const trace = (row?.trace ?? []) as TraceEvent[];
       const steps = trace.map((e) => e.step);

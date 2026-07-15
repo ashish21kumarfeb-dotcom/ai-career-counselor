@@ -118,11 +118,65 @@ console.log("\n== unplanned section -> removed + issue ==");
 
 console.log("\n== missing / empty sections handled safely ==");
 {
+  // Previously asserted "empty draft ... approves". That WAS the bug: an empty
+  // answer is not an answer, and approving it meant the regeneration loop never
+  // fired on the one failure mode that most deserves it.
   const out1 = await runVerificationAgent(input(["ai_suggestion", "resources"], {}), { softCheck: softOk });
-  check("empty draft does not throw and approves", out1.approved === true && out1.issues.length === 0);
+  check("empty draft does not throw", out1.finalSections !== undefined);
+  check("empty planned text is REJECTED, not approved", out1.approved === false);
+  check("issue names the empty section", out1.issues.some((i) => i.includes("came back empty")), JSON.stringify(out1.issues));
 
   const out2 = await runVerificationAgent(input(["resources"], { resources: { items: [], note: "No verified resources found for this query." } }), { softCheck: softOk });
   check("empty planned section kept, no false invention", out2.approved === true && out2.finalSections.resources?.items.length === 0);
+}
+
+console.log("\n== planned free-text that came back EMPTY is rejected ==");
+{
+  // The exact shape assembleSections emits when the LLM call failed: the planned
+  // keys are present, the content is not.
+  const gutted: ResponseSections = {
+    ai_suggestion: "",
+    roadmap: { items: [], suggested: true },
+    skill_focus: [],
+    next_steps: [],
+  };
+  const out = await runVerificationAgent(input(["ai_suggestion", "roadmap", "skill_focus", "next_steps"], gutted), { softCheck: softOk });
+  check("approved false", out.approved === false);
+  check("every empty planned section named", ["ai_suggestion", "roadmap", "skill_focus", "next_steps"].every((s) => out.issues.some((i) => i.includes(s))), JSON.stringify(out.issues));
+  check("feedback tells the model to produce content", /empty or omitted section is not an answer/i.test(out.recommendedFix ?? ""), out.recommendedFix);
+}
+{
+  // Whitespace is not content.
+  const out = await runVerificationAgent(input(["ai_suggestion"], { ai_suggestion: "   \n  " }), { softCheck: softOk });
+  check("whitespace-only text rejected", out.approved === false, JSON.stringify(out.issues));
+}
+{
+  // Deterministic by necessity: text generation fails exactly when the soft check
+  // is most likely to be unavailable too.
+  const out = await runVerificationAgent(input(["ai_suggestion"], { ai_suggestion: "" }), { softCheck: softUnavailable });
+  check("caught with the soft check unavailable", out.approved === false, JSON.stringify(out.issues));
+}
+{
+  // A DB-only plan legitimately has no free text — that must still approve.
+  const out = await runVerificationAgent(input(["agencies"], { agencies: { items: [{ ...A1 }] } }), { softCheck: softOk });
+  check("DB-only plan with no text sections still approves", out.approved === true, JSON.stringify(out.issues));
+}
+{
+  // A section that is populated must not be flagged just because a sibling is not.
+  const out = await runVerificationAgent(input(["ai_suggestion", "roadmap"], { ai_suggestion: "Real advice.", roadmap: { items: [], suggested: true } }), { softCheck: softOk });
+  check("only the empty section is flagged", out.issues.filter((i) => i.includes("came back empty")).length === 1, JSON.stringify(out.issues));
+  check("issue names roadmap, not ai_suggestion", out.issues.some((i) => i.includes("roadmap") && !i.includes("ai_suggestion")), JSON.stringify(out.issues));
+}
+{
+  // Ordering: the invented-provider check DELETES free text. If the empty check
+  // ran after it, sanitization would report itself as empty output.
+  const draft: ResponseSections = { ai_suggestion: "Contact ABC Career Consultancy today.", roadmap: { items: ["step"], suggested: true } };
+  const out = await runVerificationAgent(
+    { query: "q", plan: plan(["ai_suggestion", "roadmap"]), draftSections: draft, careerData: { ...careerData, agencies: [] } },
+    { softCheck: softOk }
+  );
+  check("provider removal does not cascade into a false 'empty' issue", !out.issues.some((i) => i.includes("came back empty")), JSON.stringify(out.issues));
+  check("the provider issue is still reported", out.issues.some((i) => i.includes("ABC Career Consultancy")), JSON.stringify(out.issues));
 }
 
 console.log("\n== soft unavailable does NOT default to grounded/safe true ==");
