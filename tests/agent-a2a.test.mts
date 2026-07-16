@@ -48,12 +48,17 @@ function baseState(over: Partial<AgentStateType>): AgentStateType {
   return {
     userId: "",
     query: "",
+    runId: "",
+    trace: [],
+    recommendationId: undefined,
+    memoryUpdate: undefined,
     persist: false,
     intent: "career_advice",
     profile: undefined,
     memory: [],
     ragDocs: [],
     plan: undefined,
+    executionPlan: undefined,
     toolResults: { agencies: [], resources: [] },
     sections: undefined,
     verification: undefined,
@@ -62,6 +67,7 @@ function baseState(over: Partial<AgentStateType>): AgentStateType {
     careerData: undefined,
     recommendation: undefined,
     verificationResult: undefined,
+    regenerationAttempts: 0,
     ...over,
   };
 }
@@ -160,7 +166,7 @@ try {
       userId: user.id,
       query: "zza2aagency counselling",
       plan: plan(["agencies"]),
-      careerData: { ragDocs: [], resources: [], courses: [], agencies: [realAgency], sourcesUsed: [], missingDataNotes: [] },
+      careerData: { ragDocs: [], resources: [], courses: [], agencies: [realAgency], sourcesUsed: [], missingDataNotes: [], toolCalls: [] },
       recommendation: { draftSections: { agencies: { items: [{ ...realAgency }, ghost] } } },
     });
     const out = { ...state, ...(await verificationAgentNode(state)) };

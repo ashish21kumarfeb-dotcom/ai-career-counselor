@@ -1,7 +1,9 @@
+import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { getSession } from "../../../lib/auth/session";
 import { chatSchema } from "../../../lib/chat/validation";
 import { agentGraph } from "../../../lib/agent/graph";
+import { saveRun } from "../../../lib/agent/trace/queries";
 
 // The Career Chat route. Runs the LangGraph workflow:
 // intent -> context (profile + memory + RAG) -> planner -> tools (DB-only agency
@@ -32,13 +34,22 @@ export async function POST(request: Request) {
     );
   }
 
+  // Correlation id for the whole run. Minted here (not defaulted inside the
+  // graph) so the id exists even if the graph throws before any node runs, and
+  // so a failed run can still be recorded below.
+  const runId = randomUUID();
+
   try {
     const result = await agentGraph.invoke({
       userId: session.userId,
       query: parsed.data.message,
-      // persist defaults true: the graph updates memory and logs the turn.
+      runId,
+      // persist defaults true: the graph updates memory, logs the turn, and
+      // flushes the audit trace to agent_runs.
     });
 
+    // NOTE: the response shape is deliberately unchanged — the trace lands in
+    // agent_runs, not here. Exposing it is a separate, deliberate decision.
     return NextResponse.json(
       {
         intent: result.intent,
@@ -51,6 +62,20 @@ export async function POST(request: Request) {
     );
   } catch (error) {
     console.error("agent-chat graph error:", error);
+    // The graph threw, so persist_trace never ran and the run would otherwise
+    // vanish. Record the failure — an audit trace that only keeps successes is
+    // worse than none. Best-effort: never let it mask the original error.
+    try {
+      await saveRun({
+        runId,
+        userId: session.userId,
+        query: parsed.data.message,
+        trace: [],
+        finalStatus: "failed",
+      });
+    } catch (traceError) {
+      console.error("agent-chat failed-run trace write failed:", traceError);
+    }
     return NextResponse.json(
       { error: "The assistant is unavailable right now. Please try again." },
       { status: 502 }

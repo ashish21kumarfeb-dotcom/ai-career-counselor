@@ -28,6 +28,19 @@ export const verificationStatus = pgEnum("verification_status", [
   "rejected",
 ]);
 
+// How an /api/agent-chat run ended. Mirrors FINAL_STATUSES in
+// src/lib/agent/trace/types.ts — keep the two in sync.
+// `regenerated` and `fallback` are only reachable once the verification
+// regeneration loop lands; they are defined up front because Postgres cannot
+// safely drop an in-use enum value later (same reasoning as `job_switcher`).
+export const runStatus = pgEnum("run_status", [
+  "approved",
+  "corrected",
+  "regenerated",
+  "fallback",
+  "failed",
+]);
+
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: varchar("name"),
@@ -96,6 +109,28 @@ export const memory = pgTable(
   // One row per (user, memory_key): enables upsert on this pair.
   (t) => [unique("memory_user_key_unique").on(t.userId, t.memoryKey)]
 );
+
+// One row per /api/agent-chat run: the persisted audit trace.
+//
+// A separate table rather than columns on `ai_recommendations`, because a run can
+// end without ever producing a recommendation (it can fail, or ship a fallback),
+// and because ai_recommendations' two jsonb columns are already spoken for. This
+// also keeps that table's contract stable for existing readers.
+//
+// `run_id` is the caller-supplied correlation id (unique), distinct from the row's
+// own `id`. `recommendation_id` is nullable: a failed run has no recommendation.
+export const agentRuns = pgTable("agent_runs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  runId: uuid("run_id").notNull().unique(),
+  userId: uuid("user_id").references(() => users.id),
+  query: text("query").notNull(),
+  intent: varchar("intent"),
+  executionPlan: jsonb("execution_plan"),
+  trace: jsonb("trace"),
+  finalStatus: runStatus("final_status").notNull(),
+  recommendationId: uuid("recommendation_id").references(() => aiRecommendations.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
 
 export const consultingAgencies = pgTable("consulting_agencies", {
   id: uuid("id").primaryKey().defaultRandom(),

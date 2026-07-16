@@ -30,12 +30,17 @@ function makeState(query: string, sections: SectionName[]): AgentStateType {
   return {
     userId: "00000000-0000-0000-0000-000000000000",
     query,
+    runId: "",
+    trace: [],
+    recommendationId: undefined,
+    memoryUpdate: undefined,
     persist: false,
     intent: "other",
     profile: undefined,
     memory: [],
     ragDocs: [],
     plan: { sections, reasoning: "test" },
+    executionPlan: undefined,
     toolResults: { agencies: [], resources: [] },
     sections: undefined,
     verification: undefined,
@@ -44,6 +49,7 @@ function makeState(query: string, sections: SectionName[]): AgentStateType {
     careerData: undefined,
     recommendation: undefined,
     verificationResult: undefined,
+    regenerationAttempts: 0,
   };
 }
 

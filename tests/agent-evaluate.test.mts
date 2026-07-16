@@ -19,12 +19,17 @@ function makeState(over: Partial<AgentStateType>): AgentStateType {
   return {
     userId: "00000000-0000-0000-0000-000000000000",
     query: "",
+    runId: "",
+    trace: [],
+    recommendationId: undefined,
+    memoryUpdate: undefined,
     persist: false,
     intent: "other",
     profile: undefined,
     memory: [],
     ragDocs: [],
     plan: undefined,
+    executionPlan: undefined,
     toolResults: { agencies: [], resources: [] },
     sections: undefined,
     verification: undefined,
@@ -33,6 +38,7 @@ function makeState(over: Partial<AgentStateType>): AgentStateType {
     careerData: undefined,
     recommendation: undefined,
     verificationResult: undefined,
+    regenerationAttempts: 0,
     ...over,
   };
 }

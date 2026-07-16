@@ -99,8 +99,17 @@ export type EvaluationScore = z.infer<typeof evaluationSchema> & {
 // allowed ONLY when the query explicitly asks for a human help/guidance provider.
 // Deliberately does NOT match a bare "help" (too broad — over-shows agencies);
 // it matches provider terms only.
+//
+// The vocabulary tracks classifyIntent's `agency_search` definition ("consulting
+// agency, recruiter, or placement service"). Without recruit/placement/headhunt/
+// staffing the gate vetoed the very asks the classifier labels agency_search —
+// "find me a recruiter" classified as agency_search and could then never surface
+// one. All four are provider nouns, so they complete the existing category rather
+// than widen it. Terms that merely IMPLY wanting a provider ("hire", "help") stay
+// out, per the bare-"help" rule above. Note this gate can only VETO: the planner's
+// needs.agencies must still be true, so a term here never surfaces agencies alone.
 const AGENCY_TERMS =
-  /\b(counsel\w*|consult\w*|mentor\w*|agenc(?:y|ies)|advis\w*|coach\w*|guidance)\b/i;
+  /\b(counsel\w*|consult\w*|mentor\w*|agenc(?:y|ies)|advis\w*|coach\w*|guidance|recruit\w*|placement\w*|headhunt\w*|staffing)\b/i;
 
 // Resources/courses are benign, so this gate is broad: it passes for essentially
 // any career-guidance or learning query, and only vetoes when the query is a pure

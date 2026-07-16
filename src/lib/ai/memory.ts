@@ -212,9 +212,33 @@ function parseFacts(raw: string): unknown[] {
 // and grounding guards, logging every dropped candidate for debugging, and
 // deduplicates by key (last value wins) so a batch upsert can't hit the same
 // key twice.
+// The extractor's outcome, not just its output.
+//
+// `available: false` means the extractor could not RUN (LLM error) — it does NOT
+// mean the user stated nothing. Both previously collapsed to `[]`, so a caller
+// could not tell "nothing durable was said" from "we have no idea", and the run
+// trace reported a rate-limited extraction as a successful one.
+//
+// Same distinction, and the same reason, as SoftCheckResult.available in the
+// Verification Agent: an unavailable check must never read as a negative result.
+export type MemoryExtraction = {
+  facts: ExtractedMemory[];
+  available: boolean;
+  error?: string;
+};
+
+// Back-compat wrapper: callers that only want the facts (and treat a failure as
+// "no facts") keep working unchanged. New callers that need to report honestly
+// should use extractMemoriesDetailed.
 export async function extractMemories(
   message: string
 ): Promise<ExtractedMemory[]> {
+  return (await extractMemoriesDetailed(message)).facts;
+}
+
+export async function extractMemoriesDetailed(
+  message: string
+): Promise<MemoryExtraction> {
   try {
     const completion = await getGroq().chat.completions.create({
       model: MEMORY_MODEL,
@@ -256,9 +280,14 @@ export async function extractMemories(
       byKey.set(key, value); // last wins
     }
 
-    return Array.from(byKey, ([key, value]) => ({ key, value }));
+    // An empty result here is a real answer: the message stated nothing durable.
+    return { facts: Array.from(byKey, ([key, value]) => ({ key, value })), available: true };
   } catch (error) {
     console.error("Memory extraction failed:", error);
-    return [];
+    return {
+      facts: [],
+      available: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
   }
 }
