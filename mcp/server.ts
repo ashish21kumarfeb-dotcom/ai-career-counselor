@@ -40,7 +40,11 @@ import {
 const PORT = Number(process.env.MCP_PORT ?? 3333);
 // Bind loopback only. The MCP transport spec: "When running locally, servers
 // SHOULD bind only to localhost (127.0.0.1) rather than all network interfaces."
-const HOST = process.env.MCP_HOST ?? "127.0.0.1";
+const HOST =
+  process.env.NODE_ENV === "production"
+    ? "0.0.0.0"
+    : "127.0.0.1";
+
 const PATH = "/mcp";
 
 function buildServer(): McpServer {
@@ -103,7 +107,9 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     // The spec REQUIRES servers to validate the Origin header against DNS
     // rebinding. The SDK implements it; enabling it beats hand-rolling the check.
     enableDnsRebindingProtection: true,
-    allowedHosts: [`${HOST}:${PORT}`, `localhost:${PORT}`],
+    allowedHosts: process.env.NODE_ENV === "production"
+  ? undefined
+  : [`${HOST}:${PORT}`, `localhost:${PORT}`]
   });
 
   res.on("close", () => {
