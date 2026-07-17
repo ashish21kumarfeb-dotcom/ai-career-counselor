@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useEffect, type FormEvent, type KeyboardEvent } from "react";
+import { ExecutionTimeline } from "./ExecutionTimeline";
 import type { Turn } from "./types";
 
 // The conversation + input column. Presentational: all state lives in the parent
@@ -96,13 +97,7 @@ export function ChatPanel({ turns, message, onMessageChange, onSend, loading, er
           )
         )}
 
-        {loading ? (
-          <div className="flex justify-start">
-            <div className="glass-card rounded-2xl px-4 py-3 text-sm text-slate-400">
-              Planning → retrieving → generating → verifying…
-            </div>
-          </div>
-        ) : null}
+        {loading ? <ExecutionTimeline /> : null}
 
         {error ? (
           <p role="alert" className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">
