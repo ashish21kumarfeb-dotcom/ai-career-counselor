@@ -24,7 +24,7 @@ export default async function ResumePage() {
       <div className="flex min-w-0 flex-1 flex-col">
         <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 pt-6 pb-6 sm:px-6">
           <section className="mb-5">
-            <span className="glass mb-3 inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-xs font-medium text-heading">
+            <span className="glass mb-3 inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-xs font-semibold text-heading">
               <span className="h-1.5 w-1.5 rounded-full bg-accent shadow-[0_0_10px_2px_rgba(86,197,150,0.7)]" aria-hidden />
               Resume &amp; documents
             </span>

@@ -17,6 +17,7 @@ import { SECTIONS } from "../src/lib/agent/schema";
 import type { AgentPlan, SectionName } from "../src/lib/agent/schema";
 import {
   assembleSections,
+  buildContext,
   hasVerifiedResources,
   runRecommendationAgent,
   type TextSections,
@@ -151,6 +152,41 @@ console.log("\n== A. hasVerifiedResources derivation ==");
   check("true when resources present", hasVerifiedResources(careerData) === true);
   check("false when none present", hasVerifiedResources(emptyCareerData) === false);
   check("true when only courses present", hasVerifiedResources({ ...emptyCareerData, courses: [{ title: "C", type: "career_data", url: "https://c" }] }) === true);
+}
+
+console.log("\n== A. External sourced results injected into grounding context ==");
+{
+  const cdExternal: CareerDataAgentOutput = {
+    ...emptyCareerData,
+    roadmaps: [
+      { title: "Data Analyst Roadmap", url: "https://roadmap.sh/data-analyst", source: "roadmap.sh", snippet: "Step-by-step path from beginner to analyst.", publishedDate: null, score: 0.9 },
+    ],
+    marketSignals: [
+      { title: "Analytics hiring is up 12% YoY", url: "https://linkedin.com/report", source: "linkedin.com", snippet: "Demand for analysts grew across sectors.", publishedDate: "2025-02-01", score: 0.8 },
+    ],
+    industryArticles: [
+      { title: "The state of data work in 2025", url: "https://mckinsey.com/insights/data", source: "mckinsey.com", snippet: "How organizations are restructuring analytics teams.", publishedDate: "2025-01-01", score: 0.7 },
+    ],
+  };
+  const profile: ProfileAgentOutput = {
+    profileSummary: "Job switcher; skills: Excel.",
+    memorySummary: "No stored memory for this user.",
+    userContext: { stage: "job_switcher", currentRole: null, skills: ["Excel"], interests: [], careerGoal: null, location: null },
+    importantConstraints: [],
+  };
+  const ctx = buildContext(profile, cdExternal);
+  check("context has an EXTERNAL SOURCED REFERENCES block", ctx.includes("EXTERNAL SOURCED REFERENCES"), ctx);
+  check("lane labels present", ctx.includes("Career roadmaps") && ctx.includes("Labor-market signals") && ctx.includes("Industry articles"));
+  check("external title cited", ctx.includes("Data Analyst Roadmap"));
+  check("external url cited (grounding link)", ctx.includes("https://roadmap.sh/data-analyst"));
+  check("external source label cited", ctx.includes("mckinsey.com"));
+  check("external snippet included", ctx.includes("Demand for analysts grew"));
+
+  // Empty external -> no block, and skipped lanes are omitted individually.
+  const ctxNone = buildContext(profile, emptyCareerData);
+  check("no external block when there are no external results", !ctxNone.includes("EXTERNAL SOURCED REFERENCES"), ctxNone);
+  const ctxRoadmapsOnly = buildContext(profile, { ...emptyCareerData, roadmaps: cdExternal.roadmaps });
+  check("only non-empty lanes render", ctxRoadmapsOnly.includes("Career roadmaps") && !ctxRoadmapsOnly.includes("Labor-market signals"));
 }
 
 console.log("\n== A. Contract validation (I/O DTOs) ==");

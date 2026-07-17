@@ -73,29 +73,29 @@ export function SpaceBackground() {
             cy="56"
             rx="56"
             ry="16"
-            stroke="#ffffff"
+            stroke="#38bdf8"
             strokeWidth="2"
             transform="rotate(-16 65 56)"
           />
-          <circle cx="65" cy="54" r="26" fill="rgba(230,236,255,0.05)" stroke="#ffffff" strokeWidth="2" />
-          <path d="M 42,48 Q 65,56 88,48" stroke="#cbd8ff" strokeWidth="1.3" fill="none" opacity="0.65" />
+          <circle cx="65" cy="54" r="26" fill="rgba(56,189,248,0.06)" stroke="#38bdf8" strokeWidth="2" />
+          <path d="M 42,48 Q 65,56 88,48" stroke="#5cc0e6" strokeWidth="1.3" fill="none" opacity="0.65" />
         </svg>
       </div>
 
       {/* Pluto — bottom-left */}
       <div className="planet" style={{ bottom: "12%", left: "5%", opacity: 0.18, animationDelay: "3s" }}>
         <svg width="52" height="52" viewBox="0 0 60 60" fill="none">
-          <circle cx="30" cy="30" r="20" fill="rgba(230,236,255,0.05)" stroke="#ffffff" strokeWidth="2" />
-          <circle cx="23" cy="25" r="3.4" stroke="#cbd8ff" strokeWidth="1.2" fill="none" opacity="0.65" />
-          <circle cx="36" cy="34" r="2.4" stroke="#cbd8ff" strokeWidth="1.2" fill="none" opacity="0.65" />
+          <circle cx="30" cy="30" r="20" fill="rgba(56,189,248,0.06)" stroke="#38bdf8" strokeWidth="2" />
+          <circle cx="23" cy="25" r="3.4" stroke="#5cc0e6" strokeWidth="1.2" fill="none" opacity="0.65" />
+          <circle cx="36" cy="34" r="2.4" stroke="#5cc0e6" strokeWidth="1.2" fill="none" opacity="0.65" />
         </svg>
       </div>
 
       {/* Tiny moon — mid-left */}
       <div className="planet hidden md:block" style={{ top: "26%", left: "7%", opacity: 0.14, animationDelay: "6s" }}>
         <svg width="30" height="30" viewBox="0 0 40 40" fill="none">
-          <circle cx="20" cy="20" r="13" fill="rgba(230,236,255,0.05)" stroke="#ffffff" strokeWidth="1.8" />
-          <circle cx="16" cy="17" r="2.2" stroke="#cbd8ff" strokeWidth="1" fill="none" opacity="0.6" />
+          <circle cx="20" cy="20" r="13" fill="rgba(56,189,248,0.06)" stroke="#38bdf8" strokeWidth="1.8" />
+          <circle cx="16" cy="17" r="2.2" stroke="#5cc0e6" strokeWidth="1" fill="none" opacity="0.6" />
         </svg>
       </div>
     </div>

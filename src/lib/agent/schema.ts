@@ -125,6 +125,37 @@ export function resourceGate(query: string): boolean {
   return RESOURCE_TERMS.test(query);
 }
 
+// --- External-tool gates (Tavily) --------------------------------------------
+// One keyword gate per external tool, mirroring agencyGate/resourceGate: the query
+// must show it wants that KIND of signal before the tool is allowed to reach the
+// network. Deliberately narrow so a pure agency lookup ("suggest a counsellor in
+// Delhi") earns none of them. These VETO only; the Career Data Agent additionally
+// requires externalSearchEnabled() before any external tool runs.
+
+// Roadmaps: the query wants a learning path / how-to-get-there for a role or skill.
+const ROADMAP_TERMS =
+  /\b(roadmap\w*|pathway\w*|how (?:do|to|can)|become|becoming|get into|break into|transition\w*|switch\w*|steps?|learn\w*|stud(?:y|ies)|prepar\w*|skill\w*|upskill\w*)\b/i;
+
+// Market signals: the query wants demand / hiring / growth / outlook for a field.
+const MARKET_TERMS =
+  /\b(demand|market\w*|trend\w*|outlook|growth|growing|hiring|in-demand|future|scope|opportunit\w*|emerging|booming|declin\w*|job market)\b/i;
+
+// Industry articles: the query wants current industry coverage / analysis / news.
+const ARTICLE_TERMS =
+  /\b(industr\w*|news|article\w*|insight\w*|report\w*|analysis|latest|current|recent|update\w*|state of|overview|development\w*)\b/i;
+
+export function careerRoadmapGate(query: string): boolean {
+  return ROADMAP_TERMS.test(query);
+}
+
+export function marketSignalGate(query: string): boolean {
+  return MARKET_TERMS.test(query);
+}
+
+export function industryArticleGate(query: string): boolean {
+  return ARTICLE_TERMS.test(query);
+}
+
 // Turn proposed needs into the final, gated section list (stable order). Agencies
 // and resources/courses survive only if their gate also passes. Always returns at
 // least one section so the graph never produces an empty response.

@@ -22,6 +22,7 @@ import type { AgentPlan, ResponseSections, SectionName } from "../schema";
 import type {
   ProfileAgentOutput,
   CareerDataAgentOutput,
+  ExternalResult,
   RecommendationAgentInput,
   RecommendationAgentOutput,
 } from "./contracts";
@@ -43,10 +44,35 @@ export function hasVerifiedResources(careerData: CareerDataAgentOutput): boolean
   return careerData.resources.length > 0 || careerData.courses.length > 0;
 }
 
+// The external (Tavily) sourced results carried on the Career Data envelope, in a
+// stable lane order. These come from web search, not the DB, so — unlike agencies
+// and resource links, which render as their own verified sections — they ground the
+// FREE TEXT: the model may cite them for the roadmap, market context, and next
+// steps. Every one carries an http url (the sourced-only invariant), so citing one
+// is genuine grounding, not invention.
+function externalReferences(
+  careerData: CareerDataAgentOutput
+): { label: string; rows: ExternalResult[] }[] {
+  return [
+    { label: "Career roadmaps", rows: careerData.roadmaps ?? [] },
+    { label: "Labor-market signals", rows: careerData.marketSignals ?? [] },
+    { label: "Industry articles", rows: careerData.industryArticles ?? [] },
+  ].filter((lane) => lane.rows.length > 0);
+}
+
+// Keep a provider snippet from ballooning the prompt while still giving the model
+// enough to ground a sentence.
+function clip(text: string, max = 220): string {
+  const t = text.trim();
+  return t.length > max ? `${t.slice(0, max - 1).trimEnd()}…` : t;
+}
+
 // Grounding context injected into the LLM prompt, sourced from the two upstream
 // agents' outputs. The link/agency lists are explicitly framed as the ONLY ones
-// the model may reference — reinforcing that verified data comes from the DB.
-function buildContext(profile: ProfileAgentOutput, careerData: CareerDataAgentOutput): string {
+// the model may reference — reinforcing that verified data comes from the DB. The
+// external sourced references are added the same way: citable, but nothing beyond
+// them may be introduced. Exported so the injection is unit-testable without an LLM.
+export function buildContext(profile: ProfileAgentOutput, careerData: CareerDataAgentOutput): string {
   const parts: string[] = [`USER PROFILE:\n${profile.profileSummary}`];
 
   if (profile.importantConstraints.length) {
@@ -71,6 +97,20 @@ function buildContext(profile: ProfileAgentOutput, careerData: CareerDataAgentOu
   if (careerData.agencies.length) {
     parts.push(
       `AVAILABLE VERIFIED AGENCIES (the ONLY agencies you may reference):\n${careerData.agencies.map((a) => `- ${a.name}, ${a.location ?? ""}: ${a.services ?? ""}`).join("\n")}`
+    );
+  }
+  const external = externalReferences(careerData);
+  if (external.length) {
+    const lanes = external
+      .map(
+        ({ label, rows }) =>
+          `${label}:\n${rows
+            .map((e) => `- ${e.title} — ${e.source} (${e.url})${e.snippet ? `: ${clip(e.snippet)}` : ""}`)
+            .join("\n")}`
+      )
+      .join("\n");
+    parts.push(
+      `EXTERNAL SOURCED REFERENCES (retrieved via web search — you MAY cite these to ground the roadmap, market context, and next steps; reference them by their source name or link. Do NOT introduce any company, statistic, salary, or source that is not listed here or above):\n${lanes}`
     );
   }
   return parts.length ? parts.join("\n\n") : "(no additional context available)";
@@ -111,7 +151,7 @@ You are generating a STRUCTURED response. Respond with a single JSON object cont
 - roadmap: an array of short ordered step strings. ${roadmapRule}
 - skill_focus: an array of a few specific skills the user should focus on or close the gap on, informed by their profile skills vs. their goal. Each item is a short skill name with a brief qualifier (e.g. "SQL (joins, aggregation)").
 - next_steps: an array of a few concrete immediate actions.
-Grounding rules: use ONLY the provided context for facts. Do NOT invent agencies, courses, links, companies, salaries, or statistics. Do NOT reference any agency or link not listed in the context. Separate opinion from fact; never guarantee jobs, interviews, or salaries.`;
+Grounding rules: use ONLY the provided context for facts. Do NOT invent agencies, courses, links, companies, salaries, or statistics. You MAY cite a figure, trend, or source ONLY if it appears in the provided context (including the EXTERNAL SOURCED REFERENCES), and you must attribute it to that source. Do NOT reference any agency, link, or source not listed in the context. Separate opinion from fact; never guarantee jobs, interviews, or salaries.`;
 
   const user = `User query: ${JSON.stringify(input.query)}
 

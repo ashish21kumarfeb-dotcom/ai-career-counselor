@@ -139,7 +139,7 @@ export function OnboardingInlineChoice({
               className={`rounded-xl border px-4 py-2 text-sm font-medium transition-all ${
                 selected
                   ? "border-brand/70 bg-mint/15 text-heading ring-2 ring-brand/35"
-                  : "border-white/12 bg-white/5 text-slate-300 hover:border-brand/40 hover:bg-white/10"
+                  : "border-slate-900/12 bg-slate-900/[0.03] text-slate-300 hover:border-brand/40 hover:bg-slate-900/[0.06]"
               }`}
             >
               {option.label}
@@ -190,7 +190,7 @@ export function OnboardingChoiceCards({
               className={`flex items-start gap-3 rounded-2xl border p-4 text-left transition-all ${
                 selected
                   ? "border-brand/70 bg-mint/15 ring-2 ring-brand/35"
-                  : "border-white/12 bg-white/5 hover:border-brand/40 hover:bg-white/10"
+                  : "border-slate-900/12 bg-slate-900/[0.03] hover:border-brand/40 hover:bg-slate-900/[0.06]"
               }`}
             >
               <span className="text-2xl" aria-hidden>

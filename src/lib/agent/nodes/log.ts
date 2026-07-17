@@ -1,8 +1,12 @@
 // Log node (SRS logging): reuses logRecommendation to write the turn to
 // ai_recommendations. The agent answer is sectioned JSON, so finalAnswer stores
-// the serialized sections; sourcesUsed combines the agencies and resource docs
-// that actually backed the answer. Never blocks the response; skipped when
-// state.persist is false.
+// the serialized sections; sourcesUsed is read straight from the Career Data
+// envelope — the agencies + resource docs that backed the answer PLUS the external
+// (Tavily) sourced results, which now ground the free text and pass verification.
+// The envelope is the single source of truth for what grounded the answer, so the
+// persisted ai_recommendations.sources_used no longer omits the external sources.
+// Falls back to [] if the envelope is absent (a short-circuited run). Never blocks
+// the response; skipped when state.persist is false.
 import { logRecommendation } from "../../chat/queries";
 import type { AgentStateType } from "../state";
 
@@ -11,18 +15,7 @@ export async function logNode(
 ): Promise<Partial<AgentStateType>> {
   if (!state.persist) return {};
   try {
-    const sourcesUsed = [
-      ...state.toolResults.agencies.map((a) => ({
-        id: a.id,
-        type: "agency",
-        sourceUrl: a.sourceUrl,
-      })),
-      ...state.toolResults.resources.map((d) => ({
-        id: d.id,
-        type: d.type,
-        sourceUrl: d.sourceUrl,
-      })),
-    ];
+    const sourcesUsed = state.careerData?.sourcesUsed ?? [];
 
     const row = await logRecommendation({
       userId: state.userId,

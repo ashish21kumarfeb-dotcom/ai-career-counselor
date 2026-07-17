@@ -88,7 +88,7 @@ export default async function DashboardPage() {
         <SketchRocket className="[mask-image:linear-gradient(to_bottom,black_35%,transparent_75%)]" />
         {/* Welcome */}
         <section className="mb-8">
-          <span className="glass mb-4 inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-xs font-medium text-heading">
+          <span className="glass mb-4 inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-xs font-semibold text-heading">
             <span className="h-1.5 w-1.5 rounded-full bg-accent shadow-[0_0_10px_2px_rgba(86,197,150,0.7)]" aria-hidden />
             Dashboard
           </span>
@@ -110,7 +110,7 @@ export default async function DashboardPage() {
                     <span aria-hidden>{a.icon}</span>
                   </div>
                   {a.soon ? (
-                    <span className="rounded-full border border-white/15 bg-white/5 px-2.5 py-1 text-[11px] font-medium text-slate-300">
+                    <span className="rounded-full border border-slate-900/12 bg-slate-900/[0.03] px-2.5 py-1 text-[11px] font-semibold text-slate-300">
                       Coming soon
                     </span>
                   ) : a.href ? (
@@ -162,9 +162,9 @@ export default async function DashboardPage() {
               {profileFields.map((f) => (
                 <div
                   key={f.label}
-                  className="rounded-2xl border border-white/10 bg-white/5 p-5"
+                  className="rounded-2xl border border-slate-900/10 bg-slate-900/[0.03] p-5"
                 >
-                  <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">
+                  <dt className="text-xs font-semibold uppercase tracking-wider text-slate-400">
                     {f.label}
                   </dt>
                   <dd className="mt-1 text-sm text-slate-100">{f.value}</dd>

@@ -19,7 +19,7 @@ export function SideNav({ email }: { email: string }) {
   const pathname = usePathname();
 
   return (
-    <aside className="glass-nav sticky top-0 z-20 flex h-dvh w-16 shrink-0 flex-col rounded-none border-y-0 border-l-0 border-r border-white/10 px-2 py-4 lg:w-60 lg:px-4">
+    <aside className="glass-nav sticky top-0 z-20 flex h-dvh w-16 shrink-0 flex-col rounded-none border-y-0 border-l-0 border-r border-slate-900/10 px-2 py-4 lg:w-60 lg:px-4">
       {/* Brand */}
       <Link href="/dashboard" className="mb-6 flex items-center gap-2 px-1.5 font-semibold text-heading lg:px-1">
         <span className="text-xl" aria-hidden>🧭</span>
@@ -31,7 +31,7 @@ export function SideNav({ email }: { email: string }) {
         {ITEMS.map((item) => {
           const active = item.href === pathname;
           const base =
-            "group flex items-center gap-3 rounded-xl px-2.5 py-2.5 text-sm font-medium transition-colors lg:px-3";
+            "group flex items-center gap-3 rounded-xl px-2.5 py-2.5 text-sm font-semibold transition-colors lg:px-3";
           if (item.soon) {
             return (
               <span
@@ -42,7 +42,7 @@ export function SideNav({ email }: { email: string }) {
                 <span className="text-lg" aria-hidden>{item.icon}</span>
                 <span className="hidden items-center gap-2 lg:flex">
                   {item.label}
-                  <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] font-medium text-slate-400">
+                  <span className="rounded-full border border-slate-900/12 bg-slate-900/[0.03] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
                     soon
                   </span>
                 </span>
@@ -57,7 +57,7 @@ export function SideNav({ email }: { email: string }) {
               className={`${base} ${
                 active
                   ? "bg-brand/15 text-heading ring-1 ring-brand/25"
-                  : "text-slate-300 hover:bg-white/5 hover:text-heading"
+                  : "text-slate-300 hover:bg-slate-900/5 hover:text-heading"
               }`}
             >
               <span className="text-lg" aria-hidden>{item.icon}</span>
@@ -68,7 +68,7 @@ export function SideNav({ email }: { email: string }) {
       </nav>
 
       {/* User + sign out */}
-      <div className="mt-4 border-t border-white/10 pt-4">
+      <div className="mt-4 border-t border-slate-900/10 pt-4">
         <div className="flex items-center gap-2 px-1 lg:gap-3">
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand/20 text-sm font-semibold text-mint-light ring-1 ring-brand/25">
             {email.charAt(0).toUpperCase()}

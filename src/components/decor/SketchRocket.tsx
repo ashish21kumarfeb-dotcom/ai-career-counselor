@@ -35,8 +35,8 @@ export function SketchRocket({ className = "" }: { className?: string }) {
 
           {/* Trail fade — opaque next to the rocket, transparent at the tail. */}
           <linearGradient id="rkt-trail" x1="1" y1="0" x2="0" y2="0">
-            <stop offset="0" stopColor="#ffffff" stopOpacity="0.85" />
-            <stop offset="1" stopColor="#ffffff" stopOpacity="0" />
+            <stop offset="0" stopColor="#38bdf8" stopOpacity="0.85" />
+            <stop offset="1" stopColor="#38bdf8" stopOpacity="0" />
           </linearGradient>
 
           {/* Invisible flight route — a smooth closed loop that orbits AROUND the
@@ -66,32 +66,32 @@ export function SketchRocket({ className = "" }: { className?: string }) {
             {/* body */}
             <path
               d="M -16,-9 C -15,-14 11,-13 20,0 C 11,13 -15,14 -16,9 Z"
-              stroke="#ffffff"
+              stroke="#38bdf8"
               strokeWidth="2"
               strokeLinejoin="round"
-              fill="rgba(255,255,255,0.06)"
+              fill="rgba(56,189,248,0.08)"
             />
             {/* nose seam */}
-            <path d="M 6,-11 C 12,-6 12,6 6,11" stroke="#ffffff" strokeWidth="1.5" fill="none" />
+            <path d="M 6,-11 C 12,-6 12,6 6,11" stroke="#38bdf8" strokeWidth="1.5" fill="none" />
             {/* window */}
-            <circle cx="-2" cy="0" r="4.2" stroke="#ffffff" strokeWidth="1.6" fill="none" />
+            <circle cx="-2" cy="0" r="4.2" stroke="#38bdf8" strokeWidth="1.6" fill="none" />
             {/* fins */}
             <path
               d="M -14,-7 L -25,-14 L -12,-4"
-              stroke="#ffffff"
+              stroke="#38bdf8"
               strokeWidth="1.8"
               fill="none"
               strokeLinejoin="round"
             />
             <path
               d="M -14,7 L -25,14 L -12,4"
-              stroke="#ffffff"
+              stroke="#38bdf8"
               strokeWidth="1.8"
               fill="none"
               strokeLinejoin="round"
             />
             {/* little flame */}
-            <path d="M -17,-3 C -25,-1 -25,1 -17,3" stroke="#ffffff" strokeWidth="1.6" fill="none" />
+            <path d="M -17,-3 C -25,-1 -25,1 -17,3" stroke="#38bdf8" strokeWidth="1.6" fill="none" />
 
             <animateMotion dur="30s" repeatCount="indefinite" rotate="auto">
               <mpath href="#rkt-path" />

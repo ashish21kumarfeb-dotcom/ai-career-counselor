@@ -60,14 +60,26 @@ const userId = u.id;
 try {
   // ===== log node =====
   console.log("\n== log node ==");
+  // The log node reads sourcesUsed straight from the Career Data envelope, so seed
+  // it there (agency + resource doc + an external Tavily source). The external row
+  // exercises the wiring that folds external sourced results into sources_used.
   const logState = makeState({
     userId,
     query: "How do I become a data analyst?",
     intent: "career_advice",
     sections: { ai_suggestion: "Focus on SQL and Python." },
-    toolResults: {
-      agencies: [{ id: "ag1", name: "X", location: "Delhi", services: "counselling", website: null, sourceUrl: "internal-seed/x" }],
-      resources: [{ id: "doc1", type: "career_data", content: "Roadmap", sourceUrl: "https://roadmap.sh/data-analyst" }],
+    careerData: {
+      ragDocs: [],
+      resources: [],
+      courses: [],
+      agencies: [],
+      sourcesUsed: [
+        { id: "ag1", type: "agency", sourceUrl: "internal-seed/x" },
+        { id: "doc1", type: "career_data", sourceUrl: "https://roadmap.sh/data-analyst" },
+        { id: "https://mckinsey.com/insights/data", type: "external_industry_article", sourceUrl: "https://mckinsey.com/insights/data" },
+      ],
+      missingDataNotes: [],
+      toolCalls: [],
     },
     evaluation: { groundedness: 8, relevance: 9, personalization: 6, actionability: 8, safety: 10, hallucination_risk: "low", notes: "ok", overall: 8.2 },
   });
@@ -81,7 +93,8 @@ try {
   check("persist:true writes exactly one row", rows.length === 1, `count=${rows.length}`);
   check("row stores the query", rows[0]?.query === "How do I become a data analyst?");
   check("row stores the intent", rows[0]?.intent === "career_advice");
-  check("row stores 2 sources (agency + resource)", Array.isArray(rows[0]?.sourcesUsed) && (rows[0]?.sourcesUsed as unknown[]).length === 2, JSON.stringify(rows[0]?.sourcesUsed));
+  check("row stores 3 sources (agency + resource + external)", Array.isArray(rows[0]?.sourcesUsed) && (rows[0]?.sourcesUsed as unknown[]).length === 3, JSON.stringify(rows[0]?.sourcesUsed));
+  check("external sourced result is recorded in sources_used", Array.isArray(rows[0]?.sourcesUsed) && (rows[0]?.sourcesUsed as Array<{ type?: string }>).some((s) => (s.type ?? "").startsWith("external_")), JSON.stringify(rows[0]?.sourcesUsed));
   check("finalAnswer is the serialized sections", typeof rows[0]?.finalAnswer === "string" && rows[0]!.finalAnswer!.includes("ai_suggestion"));
   check("row stores evaluation_score (SRS §8)", !!rows[0]?.evaluationScore && (rows[0]!.evaluationScore as { overall?: number }).overall === 8.2, JSON.stringify(rows[0]?.evaluationScore));
 

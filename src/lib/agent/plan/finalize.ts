@@ -14,11 +14,15 @@ import {
   agencyGate,
   finalizePlan,
   resourceGate,
+  careerRoadmapGate,
+  marketSignalGate,
+  industryArticleGate,
   SECTIONS,
   type AgentPlan,
   type PlannerNeeds,
   type SectionName,
 } from "../schema";
+import { externalSearchEnabled } from "../../external/tavily";
 import {
   MANDATORY_AGENTS,
   isAgentName,
@@ -130,6 +134,10 @@ function deriveTools(
 
   const wantsAgencies = finalSections.includes("agencies");
   const wantsResources = finalSections.includes("resources") || finalSections.includes("courses");
+  // External tools are not section-bound; their eligibility is the query keyword gate
+  // AND the master kill switch — the SAME condition runCareerDataAgent applies, so the
+  // plan's verdict cannot disagree with what the retrieval boundary actually does.
+  const externalOn = externalSearchEnabled();
 
   const tools: PlannedToolCall[] = [
     {
@@ -151,6 +159,24 @@ function deriveTools(
       reason: reasonFor("searchAgencies", "Retrieve verified consulting agencies."),
       gated: true,
       allowed: wantsAgencies && agencyGate(query),
+    },
+    {
+      tool: "searchCareerRoadmaps",
+      reason: reasonFor("searchCareerRoadmaps", "Fetch sourced external career roadmaps (Tavily)."),
+      gated: true,
+      allowed: externalOn && careerRoadmapGate(query),
+    },
+    {
+      tool: "searchMarketSignals",
+      reason: reasonFor("searchMarketSignals", "Fetch sourced external labor-market signals (Tavily)."),
+      gated: true,
+      allowed: externalOn && marketSignalGate(query),
+    },
+    {
+      tool: "searchIndustryArticles",
+      reason: reasonFor("searchIndustryArticles", "Fetch sourced external industry articles (Tavily)."),
+      gated: true,
+      allowed: externalOn && industryArticleGate(query),
     },
   ];
 

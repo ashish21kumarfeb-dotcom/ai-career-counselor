@@ -24,6 +24,33 @@ export type Sections = {
   next_steps?: string[];
 };
 
+// A normalized EXTERNAL (Tavily) search result — mirrors externalResultSchema in
+// src/lib/agent/agents/contracts.ts. Always sourced: `url` is a real http link.
+export type ExternalResult = {
+  title: string;
+  url: string;
+  source: string;
+  snippet: string;
+  publishedDate: string | null;
+  score: number | null;
+};
+
+// The three external tool result sets, as returned by /api/agent-chat.
+export type ExternalSignals = {
+  roadmaps: ExternalResult[];
+  marketSignals: ExternalResult[];
+  industryArticles: ExternalResult[];
+};
+
+// One MCP tool-call record — how each retrieval tool ran this turn.
+export type ToolCall = {
+  tool: string;
+  transport: "mcp" | "direct" | "skipped";
+  ok: boolean;
+  items: number;
+  degradedReason?: string;
+};
+
 export type Evaluation = {
   groundedness: number;
   relevance: number;
@@ -39,6 +66,10 @@ export type AgentResponse = {
   intent: string;
   plan: { sections: string[]; reasoning: string };
   sections: Sections;
+  // External sourced signals + MCP tool provenance. Optional so a response without
+  // them (older shape / external search disabled) still parses.
+  external?: ExternalSignals;
+  tools?: ToolCall[];
   verification: { grounded: boolean; safe: boolean; notes: string };
   evaluation?: Evaluation | null;
 };

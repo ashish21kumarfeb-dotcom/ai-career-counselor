@@ -37,7 +37,7 @@ export function ResumeUploader() {
             <h3 className="flex items-center gap-2 text-sm font-semibold text-heading">
               <span aria-hidden>📄</span> {current.filename}
             </h3>
-            <span className="rounded-full border border-accent/30 bg-accent/10 px-2.5 py-0.5 text-[11px] font-medium text-mint-light">
+            <span className="rounded-full border border-accent/30 bg-accent/10 px-2.5 py-0.5 text-[11px] font-semibold text-mint-light">
               Active
             </span>
           </div>
@@ -45,7 +45,7 @@ export function ResumeUploader() {
             {current.chars.toLocaleString()} characters
             {current.uploadedAt ? ` · uploaded ${formatDate(current.uploadedAt)}` : ""}
           </p>
-          <p className="mt-3 whitespace-pre-wrap rounded-xl border border-white/10 bg-white/5 p-3 text-xs leading-6 text-slate-300">
+          <p className="mt-3 whitespace-pre-wrap rounded-xl border border-slate-900/10 bg-slate-900/[0.03] p-3 text-xs leading-6 text-slate-300">
             {current.preview}
             {current.chars > current.preview.length ? "…" : ""}
           </p>
@@ -63,7 +63,7 @@ export function ResumeUploader() {
 
         <label
           htmlFor="resume-file"
-          className="mt-4 flex cursor-pointer flex-col items-center justify-center gap-1 rounded-2xl border border-dashed border-white/20 bg-white/5 px-4 py-8 text-center transition hover:border-accent/40 hover:bg-white/10"
+          className="mt-4 flex cursor-pointer flex-col items-center justify-center gap-1 rounded-2xl border border-dashed border-slate-900/15 bg-slate-900/[0.03] px-4 py-8 text-center transition hover:border-accent/40 hover:bg-slate-900/[0.06]"
         >
           <span aria-hidden className="text-2xl">⬆️</span>
           <span className="text-sm font-medium text-slate-100">{file ? file.name : "Choose a file"}</span>

@@ -117,14 +117,34 @@ export function buildAgentGraph(overrides: GraphOverrides = {}) {
         const calls = cd?.toolCalls ?? [];
         const ran = calls.filter((c) => c.transport !== "skipped");
         const fellBack = ran.filter((c) => c.degradedReason);
+        // toolMode is the run-level transport verdict a demo can be judged on:
+        // "mcp" only if EVERY tool that ran went over the protocol; "mixed" if some
+        // fell back; "direct" if all did; "none" if the plan earned no tool.
+        const transports = new Set(ran.map((c) => c.transport));
+        const toolMode =
+          ran.length === 0 ? "none" : transports.size > 1 ? "mixed" : ([...transports][0] ?? "none");
+        const external =
+          (cd?.roadmaps?.length ?? 0) + (cd?.marketSignals?.length ?? 0) + (cd?.industryArticles?.length ?? 0);
         return {
           status: fellBack.length > 0 ? "degraded" : "ok",
           summary:
-            `rag: ${cd?.ragDocs.length ?? 0}, agencies: ${cd?.agencies.length ?? 0}, resources: ${cd?.resources.length ?? 0}, courses: ${cd?.courses.length ?? 0}` +
+            `rag: ${cd?.ragDocs.length ?? 0}, agencies: ${cd?.agencies.length ?? 0}, resources: ${cd?.resources.length ?? 0}, courses: ${cd?.courses.length ?? 0}, external: ${external}` +
             (fellBack.length ? ` | MCP unavailable, ${fellBack.length} tool(s) fell back to direct` : ""),
           detail: {
+            // Demo-safety fields: the run's own answer to "did the tools really run
+            // over MCP, how long did they take, and did anything fall back?"
+            toolMode,
+            toolsCalled: ran.map((c) => c.tool),
+            latencyMs: cd?.toolLatencyMs ?? 0,
+            degraded: fellBack.length > 0,
+            fallbackReason: fellBack.map((c) => c.degradedReason).join("; ") || null,
             toolCalls: calls.map((c) => `${c.tool}:${c.transport}${c.degradedReason ? " (degraded)" : ""}`),
             degradedReasons: fellBack.map((c) => c.degradedReason),
+            external: {
+              roadmaps: cd?.roadmaps?.length ?? 0,
+              marketSignals: cd?.marketSignals?.length ?? 0,
+              industryArticles: cd?.industryArticles?.length ?? 0,
+            },
             missingDataNotes: cd?.missingDataNotes ?? [],
           },
         };

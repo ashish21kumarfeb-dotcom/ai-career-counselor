@@ -26,6 +26,35 @@ export function mcpUrl(): string {
   return process.env.MCP_URL ?? "http://127.0.0.1:3333/mcp";
 }
 
+export type McpHealth = {
+  enabled: boolean;
+  url: string;
+  reachable: boolean;
+  reason?: string;
+};
+
+// Liveness probe for the MCP server, deliberately OUTSIDE the LangChain adapter:
+// a raw JSON-RPC POST that answers one question — is a server speaking MCP at
+// mcpUrl() right now? verify:mcp and dev:all use it to assert "MCP is actually up"
+// before a run is allowed to claim its tools ran over the protocol. A JSON-RPC
+// error for the bare `ping` still comes from a live endpoint, so anything below
+// HTTP 500 counts as reachable; only a transport failure or 5xx is "down".
+export async function checkMcpHealth(timeoutMs = 2000): Promise<McpHealth> {
+  const enabled = mcpEnabled();
+  const url = mcpUrl();
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    return { enabled, url, reachable: res.status < 500, reason: res.status >= 500 ? `HTTP ${res.status}` : undefined };
+  } catch (error) {
+    return { enabled, url, reachable: false, reason: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 let client: MultiServerMCPClient | null = null;
 let toolCache: Map<string, { invoke: (args: Record<string, unknown>) => Promise<unknown> }> | null = null;
 // The URL the cached tools were built against. The tool objects returned by

@@ -61,7 +61,7 @@ export function OnboardingResumeStep({
         className={`flex cursor-pointer flex-col items-center justify-center gap-1 rounded-2xl border border-dashed px-4 py-8 text-center transition ${
           uploaded
             ? "border-accent/40 bg-accent/5"
-            : "border-white/20 bg-white/5 hover:border-accent/40 hover:bg-white/10"
+            : "border-slate-900/15 bg-slate-900/[0.03] hover:border-accent/40 hover:bg-slate-900/[0.06]"
         }`}
       >
         <span aria-hidden className="text-2xl">

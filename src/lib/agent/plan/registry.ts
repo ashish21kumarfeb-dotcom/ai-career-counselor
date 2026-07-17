@@ -42,8 +42,19 @@ export type AgentName = (typeof AGENT_NAMES)[number];
 export const MANDATORY_AGENTS: readonly AgentName[] = AGENT_NAMES;
 
 // The retrieval tools. `searchDocuments` is RAG grounding (always runs,
-// user-scoped); the other two are gated.
-export const TOOL_NAMES = ["searchDocuments", "searchResources", "searchAgencies"] as const;
+// user-scoped); searchResources/searchAgencies are DB-backed and gated. The three
+// external tools (Tavily) are gated on their own keyword gates AND on
+// externalSearchEnabled(); they run at the retrieval boundary (careerData.ts), are
+// derived into the plan with the SAME gate (finalize.ts), and are recorded in
+// toolCalls/trace — so plan and retrieval never disagree about what runs.
+export const TOOL_NAMES = [
+  "searchDocuments",
+  "searchResources",
+  "searchAgencies",
+  "searchCareerRoadmaps",
+  "searchMarketSignals",
+  "searchIndustryArticles",
+] as const;
 export type ToolName = (typeof TOOL_NAMES)[number];
 
 // Risk checks this workflow can apply. Each maps to a deterministic control that

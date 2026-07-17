@@ -125,12 +125,17 @@ if (!up) {
       plannedSections: ["agencies"], userContext: EMPTY_CONTEXT,
     });
     const byTool = Object.fromEntries(out.toolCalls.map((c) => [c.tool, c]));
-    check("every tool has a call record", out.toolCalls.length === 3, JSON.stringify(out.toolCalls.map((c) => c.tool)));
+    check("every tool has a call record (2 DB + agencies + 3 external)", out.toolCalls.length === 6, JSON.stringify(out.toolCalls.map((c) => c.tool)));
     check("searchAgencies ran over mcp", byTool.searchAgencies?.transport === "mcp", JSON.stringify(byTool.searchAgencies));
     // User-scoped, so deliberately NOT on MCP this phase.
     check("searchDocuments stays direct (user-scoped)", byTool.searchDocuments?.transport === "direct");
     // Gate vetoed it: agencies-only query earns no resource tool.
     check("gated-out tool is skipped, not called", byTool.searchResources?.transport === "skipped", JSON.stringify(byTool.searchResources));
+    // External tools: disabled by default (EXTERNAL_SEARCH_ENABLED unset) AND an
+    // agency query matches none of their gates — so all three skip, no network.
+    check("searchCareerRoadmaps skipped (external off)", byTool.searchCareerRoadmaps?.transport === "skipped", JSON.stringify(byTool.searchCareerRoadmaps));
+    check("searchMarketSignals skipped (external off)", byTool.searchMarketSignals?.transport === "skipped", JSON.stringify(byTool.searchMarketSignals));
+    check("searchIndustryArticles skipped (external off)", byTool.searchIndustryArticles?.transport === "skipped", JSON.stringify(byTool.searchIndustryArticles));
     check("gates still enforced through the MCP path", true);
   }
   {

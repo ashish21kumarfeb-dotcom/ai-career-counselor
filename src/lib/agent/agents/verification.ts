@@ -103,14 +103,41 @@ function freeTextOf(sections: ResponseSections): string[] {
   ].filter((t) => t.trim().length > 0);
 }
 
+// External sourced results ground the free text too: a provider our OWN web
+// retrieval surfaced (e.g. a McKinsey or LinkedIn article) is verified, not
+// invented, so prose may name it. We allow-list each external result's title and
+// its source host, plus the host's leading label (mckinsey.com -> "mckinsey") so a
+// prose mention like "McKinsey Consulting" substring-matches. Short host labels are
+// dropped, mirroring the empty-agency-name guard below — a bare token would
+// allow-list everything.
+export function externalProviderLabels(careerData: CareerDataAgentOutput): string[] {
+  const rows = [
+    ...(careerData.roadmaps ?? []),
+    ...(careerData.marketSignals ?? []),
+    ...(careerData.industryArticles ?? []),
+  ];
+  const labels: string[] = [];
+  for (const r of rows) {
+    if (r.title.trim()) labels.push(r.title.trim());
+    const host = r.source.trim();
+    if (host) {
+      labels.push(host);
+      const base = host.split(".")[0];
+      if (base.length >= 3) labels.push(base);
+    }
+  }
+  return labels;
+}
+
 // The distinct provider names the free text mentions that no verified record backs.
-// Empty agency names are dropped from the allowlist — a blank would otherwise
+// `allowedProviders` is the union of verified agency names and external source
+// labels. Empty names are dropped from the allowlist — a blank would otherwise
 // substring-match everything and allow any invented name through. Exported for tests.
 export function inventedProviders(
   sections: ResponseSections,
-  agencies: { name: string }[]
+  allowedProviders: string[]
 ): string[] {
-  const allowed = agencies.map((a) => a.name.trim()).filter(Boolean);
+  const allowed = allowedProviders.map((n) => n.trim()).filter((n) => n.length > 0);
   const found = new Set<string>();
   for (const text of freeTextOf(sections)) {
     for (const [, name] of text.matchAll(PROVIDER_NAME)) {
@@ -209,7 +236,11 @@ export function sanitizeDraft(
   // nothing to subset the prose against, so the remedy is the one the soft check
   // already uses — replace the free text with the safe summary — but decided here,
   // deterministically, so it holds when the soft check is unavailable.
-  const invented = inventedProviders(finalSections, input.careerData.agencies);
+  const allowedProviders = [
+    ...input.careerData.agencies.map((a) => a.name),
+    ...externalProviderLabels(input.careerData),
+  ];
+  const invented = inventedProviders(finalSections, allowedProviders);
   if (invented.length > 0) {
     hardIssues.push(
       `Removed free-text naming unverified provider(s): ${invented.join("; ")}.`
@@ -277,11 +308,19 @@ export async function runSoftCheck(
     const resourceLinks = [...careerData.resources, ...careerData.courses]
       .map((r) => r.url)
       .filter(Boolean);
+    // External sourced results are grounding material too — list them so the soft
+    // check treats a cited external source/link as grounded, not as invention.
+    const externalSources = [
+      ...(careerData.roadmaps ?? []),
+      ...(careerData.marketSignals ?? []),
+      ...(careerData.industryArticles ?? []),
+    ].map((e) => `${e.source} (${e.url})`);
     const availability = [
       `Available verified agencies (${agencyNames.length}): ${agencyNames.join("; ") || "none"}.`,
       `Available resource/course links (${resourceLinks.length}): ${resourceLinks.join("; ") || "none"}.`,
+      `Available external web sources (${externalSources.length}): ${externalSources.join("; ") || "none"}.`,
       `Knowledge docs: ${careerData.ragDocs.length}.`,
-      `Note: mentioning any agency or link from the lists above IS grounded.`,
+      `Note: mentioning any agency, link, or external source from the lists above IS grounded.`,
     ].join("\n");
 
     const completion = await getGroq().chat.completions.create({

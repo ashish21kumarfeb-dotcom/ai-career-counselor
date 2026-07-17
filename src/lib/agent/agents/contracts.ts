@@ -40,6 +40,22 @@ export const sourceRefSchema = z.object({
   sourceUrl: z.string().nullable(),
 });
 
+// A normalized EXTERNAL search result (Tavily). Unlike the DB row shapes above,
+// these come from a third-party provider, so the sourced-only invariant is enforced
+// at normalization time: every result MUST carry an http(s) url — an unsourced hit
+// is dropped, never surfaced. `snippet` is the provider's summary; `publishedDate`
+// and `score` are carried when present, null otherwise. The MCP client re-validates
+// a payload against this at the protocol boundary, exactly like the DB rows.
+export const externalResultSchema = z.object({
+  title: z.string(),
+  url: z.string(),
+  source: z.string(),
+  snippet: z.string(),
+  publishedDate: z.string().nullable(),
+  score: z.number().nullable(),
+});
+export type ExternalResult = z.infer<typeof externalResultSchema>;
+
 // --- 1. Profile Agent ---------------------------------------------------------
 // Responsibility: load + summarize the user's profile and relevant memory, and
 // distil their background and hard constraints. Deterministic (no LLM) so its
@@ -107,11 +123,24 @@ export const careerDataAgentOutputSchema = z.object({
   resources: z.array(resourceItemSchema),
   courses: z.array(resourceItemSchema),
   agencies: z.array(agencyItemSchema),
+  // External (Tavily) sourced results. Optional so existing hand-off fixtures stay
+  // valid; runCareerDataAgent always sets them (to [] when the tool was skipped,
+  // degraded, or matched nothing). Sourced-only: every item carries an http url.
+  // Retrieved, audited (toolCalls) and traced here; they ground the Recommendation
+  // Agent's free-text context, are recognized by the Verification Agent's grounding
+  // checks, and are folded into sourcesUsed.
+  roadmaps: z.array(externalResultSchema).optional(),
+  marketSignals: z.array(externalResultSchema).optional(),
+  industryArticles: z.array(externalResultSchema).optional(),
   sourcesUsed: z.array(sourceRefSchema),
   missingDataNotes: z.array(z.string()),
   // One record per retrieval tool this run considered — the evidence behind any
   // claim about how tools executed.
   toolCalls: z.array(toolCallRecordSchema),
+  // Wall-clock span of the retrieval fan-out (ms). Optional only so existing
+  // hand-off fixtures stay valid; the real agent always measures and sets it, so
+  // the trace's latencyMs stays a measured number rather than an inferred one.
+  toolLatencyMs: z.number().optional(),
 });
 
 export type CareerDataAgentOutput = z.infer<typeof careerDataAgentOutputSchema>;

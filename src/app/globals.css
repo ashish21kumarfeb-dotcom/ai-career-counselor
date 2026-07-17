@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #071827; /* midnight ocean */
-  --foreground: #eaf1f6; /* soft white — raised for stronger body contrast */
+  --background: #f6fbff; /* bright sky-white base */
+  --foreground: #12303f; /* deep slate ink — strong body contrast on white */
 }
 
 @theme inline {
@@ -11,60 +11,68 @@
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 
-  /* Midnight Ocean + Teal Glow palette */
-  --color-midnight: #071827; /* deep midnight base */
-  --color-navy: #0b1120; /* dark navy */
-  --color-teal-deep: #123c4a; /* deep teal */
-  --color-heading: #f3f8fb; /* crisp near-white — headings */
-  --color-brand: #329d9c; /* glow teal */
-  --color-brand-strong: #205072; /* ocean teal */
-  --color-mint: #56c596; /* mint highlight */
-  --color-mint-light: #7be495; /* soft highlight */
-  --color-mint-pale: #cff4d2; /* pale glow */
-  --color-accent: #56c596; /* teal/mint accent */
-  --color-danger: #f26d70; /* reserved for validation errors (readable on dark) */
+  /* Sky White + Sky-Blue / Teal palette */
+  --color-midnight: #eaf4fb; /* pale sky (legacy name, now a light tint) */
+  --color-navy: #dff0fa; /* pale sky-blue */
+  --color-teal-deep: #d3f2ec; /* pale teal */
+  --color-heading: #0b2a3d; /* deep slate — headings on white */
+  --color-brand: #0ea5e9; /* sky blue — main accent */
+  --color-brand-strong: #0284c7; /* deeper sky blue */
+  --color-mint: #14b8a6; /* teal/green highlight */
+  --color-mint-light: #0f766e; /* readable teal — accent text on pale tints */
+  --color-mint-pale: #99f6e4; /* pale teal glow */
+  --color-accent: #0d9488; /* teal/green accent — readable on white */
+  --color-danger: #dc2626; /* validation errors (readable on white) */
 
   /* Text scale overrides — slate-* is used for text only in this app (verified),
-     so lifting these raises contrast everywhere at once while preserving the
-     hierarchy: values brightest → body → secondary/labels → faintest helper. */
-  --color-slate-100: #f4f8fb; /* field values / high-contrast text */
-  --color-slate-200: #e7eef5; /* important body text */
-  --color-slate-300: #d5dee8; /* body text — clearly readable, not washed out */
-  --color-slate-400: #b8c4d3; /* secondary text & labels — muted but legible */
-  --color-slate-500: #94a3b5; /* placeholders / faint helper — subtle, not invisible */
+     so retuning these sets contrast everywhere at once while preserving the
+     hierarchy: values darkest → body → secondary/labels → faintest helper.
+     Tuned to a near-neutral dark grey (minimal blue cast) so text reads sharp
+     and high-contrast on white rather than washed-out blue-grey. */
+  --color-slate-100: #10161c; /* field values / high-contrast text */
+  --color-slate-200: #212830; /* important body text */
+  --color-slate-300: #313941; /* body text — dark grey, clearly readable in cards */
+  --color-slate-400: #48515a; /* secondary text & labels — muted but legible */
+  --color-slate-500: #5c656e; /* placeholders / faint helper — subtle, not invisible */
+  --color-slate-600: #8d959e; /* faint separators / dots — kept subtle on white */
 }
 
 body {
   min-height: 100vh;
   color: var(--foreground);
   font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
-  /* Midnight Ocean + Sky-Blue Clouds — bright blue patches spread across the
-     whole viewport over a dark ocean base, so the depth reads as soft cloudy
-     variation rather than one flat gradient. */
-  background-color: #08192a;
+  /* Crisper text edges on the light theme — smoother rendering over the frosted
+     glass surfaces keeps small labels and navbar items sharp, not blurred. */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  /* Sky White + Sky-Blue / Teal Clouds — soft blue and teal patches spread
+     across a bright white base, so the depth reads as gentle cloudy variation
+     rather than one flat white. */
+  background-color: #f4faff;
   background-image:
-    /* broad sky-blue wash across the upper half — the core sky/ocean blend */
-    radial-gradient(1700px 1020px at 50% -4%, rgba(56, 174, 234, 0.3), transparent 66%),
-    /* bright sky-blue cloud, upper-left */
-    radial-gradient(980px 720px at 14% 14%, rgba(30, 136, 200, 0.38), transparent 56%),
-    /* strong blue glow rising behind the hero, upper-center */
-    radial-gradient(1120px 860px at 50% 14%, rgba(56, 174, 234, 0.4), transparent 58%),
-    /* bright cyan highlight, center-right */
-    radial-gradient(760px 580px at 80% 22%, rgba(124, 203, 255, 0.24), transparent 54%),
+    /* broad sky-blue wash across the upper half — the core sky tone */
+    radial-gradient(1700px 1020px at 50% -4%, rgba(56, 174, 234, 0.12), transparent 66%),
+    /* soft sky-blue cloud, upper-left */
+    radial-gradient(980px 720px at 14% 14%, rgba(14, 165, 233, 0.1), transparent 56%),
+    /* gentle blue glow rising behind the hero, upper-center */
+    radial-gradient(1120px 860px at 50% 14%, rgba(56, 174, 234, 0.12), transparent 58%),
+    /* light cyan highlight, center-right */
+    radial-gradient(760px 580px at 80% 22%, rgba(125, 211, 252, 0.14), transparent 54%),
     /* cyan puff, mid */
-    radial-gradient(560px 460px at 63% 42%, rgba(124, 203, 255, 0.16), transparent 52%),
+    radial-gradient(560px 460px at 63% 42%, rgba(125, 211, 252, 0.1), transparent 52%),
     /* blue cloud, lower-left */
-    radial-gradient(900px 680px at 22% 70%, rgba(38, 146, 210, 0.22), transparent 56%),
-    /* blue cloud, lower-right */
-    radial-gradient(860px 680px at 84% 76%, rgba(30, 136, 200, 0.18), transparent 56%),
-    /* soft teal glow near cards, bottom-center — keeps the ocean identity */
-    radial-gradient(1040px 740px at 58% 110%, rgba(50, 157, 156, 0.18), transparent 60%),
-    /* soft mint accent only */
-    radial-gradient(560px 420px at 84% 16%, rgba(86, 197, 150, 0.1), transparent 52%),
-    /* navy vignette — dark ocean edges keep midnight depth on top of the blue */
-    radial-gradient(1650px 1250px at 50% 46%, transparent 50%, rgba(4, 10, 24, 0.72) 100%),
-    /* base: blue-navy top → midnight → deep teal bottom (ocean foundation) */
-    linear-gradient(160deg, #0e2c48 0%, #0b1120 34%, #08192a 60%, #0e2f3d 85%, #123c4a 100%);
+    radial-gradient(900px 680px at 22% 70%, rgba(38, 146, 210, 0.08), transparent 56%),
+    /* teal cloud, lower-right */
+    radial-gradient(860px 680px at 84% 76%, rgba(20, 184, 166, 0.08), transparent 56%),
+    /* soft teal glow near cards, bottom-center */
+    radial-gradient(1040px 740px at 58% 110%, rgba(13, 148, 136, 0.09), transparent 60%),
+    /* soft green accent only */
+    radial-gradient(560px 420px at 84% 16%, rgba(45, 212, 191, 0.08), transparent 52%),
+    /* white vignette — keeps the edges bright and clean */
+    radial-gradient(1650px 1250px at 50% 46%, transparent 55%, rgba(255, 255, 255, 0.6) 100%),
+    /* base: pale sky top → white → pale teal bottom */
+    linear-gradient(160deg, #e6f4ff 0%, #f1f9ff 34%, #ffffff 62%, #f0fdfa 85%, #e6faf5 100%);
   background-attachment: fixed;
   background-repeat: no-repeat;
 }
@@ -88,8 +96,8 @@ body::after {
 .space-decor .star {
   position: absolute;
   border-radius: 9999px;
-  background: #ffffff;
-  box-shadow: 0 0 6px 1px rgba(255, 255, 255, 0.45);
+  background: #38bdf8;
+  box-shadow: 0 0 6px 1px rgba(56, 189, 248, 0.45);
   animation-name: twinkle;
   animation-iteration-count: infinite;
   animation-timing-function: ease-in-out;
@@ -100,7 +108,7 @@ body::after {
   width: 130px;
   height: 2px;
   border-radius: 2px;
-  background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.9));
+  background: linear-gradient(to right, transparent, rgba(56, 189, 248, 0.85));
   opacity: 0;
   animation-name: shoot;
   animation-iteration-count: infinite;
@@ -167,23 +175,23 @@ body::after {
 
 body::before {
   background:
-    /* purple — high contrast against the blue/teal ocean, so the drift reads */
-    radial-gradient(46% 38% at 26% 26%, rgba(149, 108, 255, 0.4), transparent 60%),
-    /* soft white glow — bright moving highlight */
-    radial-gradient(40% 34% at 76% 40%, rgba(255, 255, 255, 0.14), transparent 62%),
-    /* teal — keeps the ocean identity */
-    radial-gradient(40% 34% at 54% 80%, rgba(50, 157, 156, 0.36), transparent 64%);
+    /* sky-blue — the primary drifting accent */
+    radial-gradient(46% 38% at 26% 26%, rgba(56, 189, 248, 0.18), transparent 60%),
+    /* soft cyan highlight */
+    radial-gradient(40% 34% at 76% 40%, rgba(125, 211, 252, 0.14), transparent 62%),
+    /* soft teal/green */
+    radial-gradient(40% 34% at 54% 80%, rgba(20, 184, 166, 0.16), transparent 64%);
   animation: aurora-drift-a 7s ease-in-out infinite alternate;
 }
 
 body::after {
   background:
     /* sky-blue */
-    radial-gradient(44% 36% at 72% 18%, rgba(124, 203, 255, 0.36), transparent 60%),
-    /* violet */
-    radial-gradient(46% 38% at 20% 58%, rgba(176, 130, 255, 0.36), transparent 62%),
-    /* soft white highlight */
-    radial-gradient(38% 32% at 84% 82%, rgba(255, 255, 255, 0.12), transparent 64%);
+    radial-gradient(44% 36% at 72% 18%, rgba(56, 174, 234, 0.16), transparent 60%),
+    /* soft green */
+    radial-gradient(46% 38% at 20% 58%, rgba(45, 212, 191, 0.16), transparent 62%),
+    /* pale cyan highlight */
+    radial-gradient(38% 32% at 84% 82%, rgba(125, 211, 252, 0.12), transparent 64%);
   animation: aurora-drift-b 10s ease-in-out infinite alternate;
 }
 
@@ -226,79 +234,79 @@ body::after {
 }
 
 @layer components {
-  /* Dark glass — the core surface of the design system. A dark navy tint (rather
-     than a light-white film) keeps text readable over the bright sky-blue glow. */
+  /* Light glass — the core surface of the design system. A bright white film
+     over the soft sky-blue / teal glow keeps text crisp and readable. */
   .glass {
-    background: rgba(9, 23, 39, 0.55);
+    background: rgba(255, 255, 255, 0.72);
     backdrop-filter: blur(20px) saturate(140%);
     -webkit-backdrop-filter: blur(20px) saturate(140%);
-    border: 1px solid rgba(255, 255, 255, 0.16);
+    border: 1px solid rgba(14, 165, 233, 0.14);
     box-shadow:
-      0 18px 48px -20px rgba(0, 0, 0, 0.55),
-      inset 0 1px 0 rgba(255, 255, 255, 0.12);
+      0 18px 48px -20px rgba(15, 42, 64, 0.18),
+      inset 0 1px 0 rgba(255, 255, 255, 0.8);
   }
 
-  /* Dark glass content cards */
+  /* Light glass content cards */
   .glass-card {
-    background: rgba(9, 23, 39, 0.56);
+    background: rgba(255, 255, 255, 0.78);
     backdrop-filter: blur(18px) saturate(140%);
     -webkit-backdrop-filter: blur(18px) saturate(140%);
-    border: 1px solid rgba(255, 255, 255, 0.16);
+    border: 1px solid rgba(15, 42, 64, 0.08);
     box-shadow:
-      0 16px 42px -22px rgba(0, 0, 0, 0.5),
-      inset 0 1px 0 rgba(255, 255, 255, 0.1);
+      0 16px 42px -22px rgba(15, 42, 64, 0.16),
+      inset 0 1px 0 rgba(255, 255, 255, 0.75);
     transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
   }
   .glass-card-hover:hover {
     transform: translateY(-3px);
-    border-color: rgba(86, 197, 150, 0.4);
+    border-color: rgba(20, 184, 166, 0.45);
     box-shadow:
-      0 24px 54px -24px rgba(0, 0, 0, 0.6),
-      0 0 0 1px rgba(86, 197, 150, 0.2),
-      inset 0 1px 0 rgba(255, 255, 255, 0.14);
+      0 24px 54px -24px rgba(15, 42, 64, 0.22),
+      0 0 0 1px rgba(20, 184, 166, 0.22),
+      inset 0 1px 0 rgba(255, 255, 255, 0.8);
   }
 
   /* Frosted navbar / floating pill */
   .glass-nav {
-    background: rgba(8, 21, 36, 0.62);
+    background: rgba(255, 255, 255, 0.72);
     backdrop-filter: blur(20px) saturate(140%);
     -webkit-backdrop-filter: blur(20px) saturate(140%);
-    border: 1px solid rgba(255, 255, 255, 0.16);
-    box-shadow: 0 12px 36px -18px rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(14, 165, 233, 0.14);
+    box-shadow: 0 12px 36px -18px rgba(15, 42, 64, 0.16);
   }
 
-  /* Dark-glass form controls — readable on the ocean background */
+  /* Light-glass form controls — readable on the white background */
   .glass-input {
-    background: rgba(8, 20, 34, 0.5);
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    color: #f4f8fb;
+    background: rgba(255, 255, 255, 0.7);
+    border: 1px solid rgba(15, 42, 64, 0.14);
+    color: #0f2233;
     transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
   }
   .glass-input::placeholder {
-    color: rgba(203, 216, 228, 0.6);
+    color: rgba(76, 100, 120, 0.7);
   }
   .glass-input:focus {
     outline: none;
-    border-color: rgba(86, 197, 150, 0.7);
-    background: rgba(8, 20, 34, 0.62);
-    box-shadow: 0 0 0 3px rgba(50, 157, 156, 0.25);
+    border-color: rgba(14, 165, 233, 0.7);
+    background: rgba(255, 255, 255, 0.9);
+    box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.2);
   }
 
-  /* Premium teal → mint gradient CTA with soft glow */
+  /* Premium sky-blue → teal gradient CTA with soft glow */
   .btn-primary {
-    background: linear-gradient(135deg, #329d9c 0%, #56c596 100%);
+    background: linear-gradient(135deg, #0ea5e9 0%, #14b8a6 100%);
     color: #ffffff;
     box-shadow:
-      0 14px 32px -12px rgba(50, 157, 156, 0.6),
-      inset 0 1px 0 rgba(255, 255, 255, 0.28);
+      0 14px 32px -12px rgba(14, 165, 233, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.35);
     transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
   }
   .btn-primary:hover {
-    filter: brightness(1.06);
+    filter: brightness(1.04);
     transform: translateY(-1px);
     box-shadow:
-      0 18px 40px -12px rgba(86, 197, 150, 0.7),
-      inset 0 1px 0 rgba(255, 255, 255, 0.32);
+      0 18px 40px -12px rgba(20, 184, 166, 0.55),
+      inset 0 1px 0 rgba(255, 255, 255, 0.4);
   }
   .btn-primary:disabled {
     opacity: 0.6;
@@ -307,16 +315,16 @@ body::after {
     filter: none;
   }
 
-  /* Ghost glass button */
+  /* Ghost button — subtle tinted surface on white */
   .btn-ghost {
-    background: rgba(255, 255, 255, 0.07);
-    border: 1px solid rgba(255, 255, 255, 0.16);
-    color: #e6eef3;
+    background: rgba(15, 42, 64, 0.04);
+    border: 1px solid rgba(15, 42, 64, 0.12);
+    color: #12303f;
     transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
   }
   .btn-ghost:hover {
-    background: rgba(255, 255, 255, 0.13);
-    border-color: rgba(255, 255, 255, 0.28);
+    background: rgba(14, 165, 233, 0.08);
+    border-color: rgba(14, 165, 233, 0.3);
   }
   .btn-ghost:disabled {
     opacity: 0.6;

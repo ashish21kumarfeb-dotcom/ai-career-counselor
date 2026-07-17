@@ -27,8 +27,14 @@ import {
   TOOL_DESCRIPTIONS,
   handleSearchAgencies,
   handleSearchResources,
+  handleSearchCareerRoadmaps,
+  handleSearchMarketSignals,
+  handleSearchIndustryArticles,
   searchAgenciesInput,
   searchResourcesInput,
+  searchCareerRoadmapsInput,
+  searchMarketSignalsInput,
+  searchIndustryArticlesInput,
 } from "./tools";
 
 const PORT = Number(process.env.MCP_PORT ?? 3333);
@@ -52,6 +58,21 @@ function buildServer(): McpServer {
     "searchResources",
     { title: "Search curated resources", description: TOOL_DESCRIPTIONS.searchResources, inputSchema: searchResourcesInput },
     handleSearchResources
+  );
+  server.registerTool(
+    "searchCareerRoadmaps",
+    { title: "Search career roadmaps (external)", description: TOOL_DESCRIPTIONS.searchCareerRoadmaps, inputSchema: searchCareerRoadmapsInput },
+    handleSearchCareerRoadmaps
+  );
+  server.registerTool(
+    "searchMarketSignals",
+    { title: "Search market signals (external)", description: TOOL_DESCRIPTIONS.searchMarketSignals, inputSchema: searchMarketSignalsInput },
+    handleSearchMarketSignals
+  );
+  server.registerTool(
+    "searchIndustryArticles",
+    { title: "Search industry articles (external)", description: TOOL_DESCRIPTIONS.searchIndustryArticles, inputSchema: searchIndustryArticlesInput },
+    handleSearchIndustryArticles
   );
 
   return server;
@@ -109,7 +130,12 @@ const http = createServer((req, res) => {
 
 http.listen(PORT, HOST, () => {
   console.log(`[mcp] career-workflow-tools listening on http://${HOST}:${PORT}${PATH}`);
-  console.log(`[mcp] tools: searchAgencies, searchResources`);
+  console.log(
+    `[mcp] tools: searchAgencies, searchResources, searchCareerRoadmaps, searchMarketSignals, searchIndustryArticles`
+  );
+  console.log(
+    `[mcp] external tools require EXTERNAL_SEARCH_ENABLED=true and TAVILY_API_KEY (else they throw and the caller degrades)`
+  );
   console.log(`[mcp] point the app at it with MCP_ENABLED=true MCP_URL=http://${HOST}:${PORT}${PATH}`);
 });
 

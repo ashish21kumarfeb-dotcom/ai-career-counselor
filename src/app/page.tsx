@@ -50,7 +50,7 @@ export default async function Home() {
               <>
                 <Link
                   href="/signin"
-                  className="rounded-full px-4 py-2 text-sm font-medium text-slate-300 transition-colors hover:text-heading"
+                  className="rounded-full px-4 py-2 text-sm font-semibold text-slate-200 transition-colors hover:text-heading"
                 >
                   Sign in
                 </Link>
@@ -70,7 +70,7 @@ export default async function Home() {
       <main className="flex flex-1 flex-col">
         <section className="relative isolate mx-auto flex w-full max-w-4xl flex-col items-center px-6 pt-20 pb-20 text-center sm:pt-28">
           <SketchRocket className="[mask-image:radial-gradient(120%_90%_at_50%_46%,transparent_30%,black_66%)]" />
-          <span className="glass mb-7 inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-medium text-heading">
+          <span className="glass mb-7 inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-semibold text-heading">
             <span className="h-1.5 w-1.5 rounded-full bg-accent shadow-[0_0_10px_2px_rgba(86,197,150,0.7)]" aria-hidden />
             AI-powered career guidance
           </span>
@@ -131,7 +131,7 @@ export default async function Home() {
         </section>
       </main>
 
-      <footer className="border-t border-white/10 py-8 text-center text-sm text-slate-400">
+      <footer className="border-t border-slate-900/10 py-8 text-center text-sm text-slate-400">
         Built to prove a complete AI counseling flow — guidance only, not a job or salary guarantee.
       </footer>
     </div>

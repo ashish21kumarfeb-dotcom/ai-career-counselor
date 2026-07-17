@@ -5,6 +5,7 @@
 import {
   runVerificationAgent,
   sanitizeDraft,
+  externalProviderLabels,
   SAFE_FALLBACK_TEXT,
   type SoftCheckResult,
 } from "../src/lib/agent/agents/verification";
@@ -325,6 +326,50 @@ console.log("\n== verified / generic provider mentions are NOT flagged ==");
     { softCheck: softOk }
   );
   check("shortened verified name allowed", out.approved === true, JSON.stringify(out.issues));
+}
+
+// --- External sourced results as grounding (allow-listed in the hard check) ------
+// A provider our OWN web retrieval surfaced is verified, not invented — prose may
+// name it. A provider backed by NO source (agency or external) is still stripped.
+const withExternal: CareerDataAgentOutput = {
+  ...careerData,
+  agencies: [], // isolate external allow-listing from the agency allowlist
+  roadmaps: [
+    { title: "Brightpath Consulting career guide", url: "https://brightpath.com/guide", source: "brightpath.com", snippet: "structured paths", publishedDate: null, score: null },
+  ],
+  marketSignals: [],
+  industryArticles: [],
+};
+
+console.log("\n== externalProviderLabels derivation ==");
+{
+  const labels = externalProviderLabels(withExternal);
+  check("includes the source host", labels.includes("brightpath.com"), JSON.stringify(labels));
+  check("includes the host leading label (for substring match)", labels.includes("brightpath"), JSON.stringify(labels));
+  check("includes the title", labels.includes("Brightpath Consulting career guide"), JSON.stringify(labels));
+  check("no external results -> no labels", externalProviderLabels({ ...careerData, roadmaps: [], marketSignals: [], industryArticles: [] }).length === 0);
+}
+
+console.log("\n== external-sourced provider named in prose -> NOT flagged (grounded) ==");
+{
+  const draft: ResponseSections = { ai_suggestion: "For a structured path, see Brightpath Consulting's roadmap." };
+  const out = await runVerificationAgent(
+    { query: "how do I move into analytics?", plan: plan(["ai_suggestion"]), draftSections: draft, careerData: withExternal },
+    { softCheck: softOk }
+  );
+  check("external-sourced provider kept (approved)", out.approved === true, JSON.stringify(out.issues));
+  check("prose untouched", (out.finalSections.ai_suggestion ?? "").includes("Brightpath Consulting"));
+}
+{
+  // A provider backed by NO source (not an agency, not an external result) is still invented.
+  const draft: ResponseSections = { ai_suggestion: "You could also contact Ghostfirm Consulting for help." };
+  const out = await runVerificationAgent(
+    { query: "how do I move into analytics?", plan: plan(["ai_suggestion"]), draftSections: draft, careerData: withExternal },
+    { softCheck: softOk }
+  );
+  check("provider backed by no source still flagged", out.approved === false, JSON.stringify(out.issues));
+  check("issue names the invented provider", out.issues.some((i) => i.includes("Ghostfirm Consulting")), JSON.stringify(out.issues));
+  check("invented prose replaced with safe fallback", out.finalSections.ai_suggestion === SAFE_FALLBACK_TEXT);
 }
 
 console.log(`\n================  ${passed} passed, ${failed} failed  ================`);

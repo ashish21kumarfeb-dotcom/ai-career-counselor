@@ -106,7 +106,7 @@ export function CareerWorkspace() {
       {/* Header */}
       <section className="mb-5 flex items-start justify-between gap-3">
         <div>
-          <span className="glass mb-3 inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-xs font-medium text-heading">
+          <span className="glass mb-3 inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-xs font-semibold text-heading">
             <span className="h-1.5 w-1.5 rounded-full bg-accent shadow-[0_0_10px_2px_rgba(86,197,150,0.7)]" aria-hidden />
             Career Chat
           </span>

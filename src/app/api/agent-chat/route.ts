@@ -48,13 +48,25 @@ export async function POST(request: Request) {
       // flushes the audit trace to agent_runs.
     });
 
-    // NOTE: the response shape is deliberately unchanged — the trace lands in
-    // agent_runs, not here. Exposing it is a separate, deliberate decision.
+    // The dynamic sections are unchanged. Additionally expose the EXTERNAL (Tavily)
+    // sourced results and the per-tool MCP transport records — both already computed
+    // on the Career Data envelope (result.careerData). This is response-shaping only:
+    // no agent, planner, retrieval, or MCP logic is touched. The full audit trace
+    // still lands in agent_runs, not here.
+    const cd = result.careerData;
     return NextResponse.json(
       {
         intent: result.intent,
         plan: result.plan,
         sections: result.sections,
+        external: {
+          roadmaps: cd?.roadmaps ?? [],
+          marketSignals: cd?.marketSignals ?? [],
+          industryArticles: cd?.industryArticles ?? [],
+        },
+        // MCP provenance for the "Tools Used" indicator: which tools ran and over
+        // which transport (mcp / direct fallback / skipped).
+        tools: cd?.toolCalls ?? [],
         verification: result.verification,
         evaluation: result.evaluation,
       },
