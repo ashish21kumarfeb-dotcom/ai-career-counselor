@@ -149,14 +149,24 @@ export function inventedProviders(
   return [...found];
 }
 
+// The LLM-authored free-text sections. Kept here (not imported from the
+// Recommendation Agent) so the verifier has no dependency on the generator.
+const TEXT_SECTIONS: SectionName[] = ["ai_suggestion", "roadmap", "skill_focus", "next_steps"];
+
 // --- Layer 1: deterministic hard checks + sanitization (pure) ------------------
-// Returns a sanitized copy of the draft plus the list of hard issues found. Never
-// throws. Exported for direct testing.
+// Returns a sanitized copy of the draft plus the issues found, split into:
+//   - hardIssues: block approval (invention/unplanned content, or a genuinely
+//     empty answer) — these route the run to a regeneration.
+//   - noteIssues: recorded for the trace and the regeneration brief but do NOT
+//     block approval (e.g. one empty supplementary section on an otherwise
+//     substantive answer). Both are surfaced in the verdict's `issues`.
+// Never throws. Exported for direct testing.
 export function sanitizeDraft(
   input: VerificationAgentInput
-): { finalSections: ResponseSections; hardIssues: string[] } {
+): { finalSections: ResponseSections; hardIssues: string[]; noteIssues: string[] } {
   const finalSections: ResponseSections = structuredClone(input.draftSections);
   const hardIssues: string[] = [];
+  const noteIssues: string[] = [];
   const planned = new Set<SectionName>(input.plan.sections);
 
   // 1. Remove any section not in the plan.
@@ -203,33 +213,45 @@ export function sanitizeDraft(
     }
   }
 
-  // 5. Every PLANNED free-text section must actually contain something.
+  // 5. Free-text emptiness. An EMPTY ANSWER (total text-generation failure) must be
+  // rejected; a substantive answer missing ONE supplementary section must NOT be.
   //
   // runRecommendationAgent swallows an LLM failure and assembles the DB sections
-  // alone, so assembleSections still emits the planned key — as "" or []. The
+  // alone, so assembleSections still emits every planned text key — as "" or []. The
   // section is present and empty, which every check above is blind to (there is
   // nothing invented to remove), and runSoftCheck's `hasFreeText` guard then reads
   // the empty draft as "no free text to verify" and passes it as trivially fine.
-  // An empty answer was therefore APPROVED — the one failure mode most deserving
-  // of the regeneration loop was the one that never triggered it.
+  // An empty answer was therefore APPROVED — the one failure mode most deserving of
+  // the regeneration loop was the one that never triggered it.
+  //
+  // But flipping `approved` on ANY empty planned section over-reached: a real
+  // ai_suggestion + roadmap was rejected merely because an optional array
+  // (skill_focus / next_steps) came back empty, routing a GOOD answer to a
+  // regeneration and, failing that, to safeFallbackNode — which REPLACES the whole
+  // free-text answer with a generic summary. The answer was gutted over a missing
+  // sub-section. So: still record every empty planned section (the trace and the
+  // regeneration brief must name them), but only BLOCK approval when NO planned
+  // free-text section produced content — the genuinely empty answer.
   //
   // Deterministic by necessity: this must hold when the soft check is unavailable,
   // which is exactly when text generation is most likely to have failed too.
-  // Nothing is sanitized — there is nothing to remove — but the hard issue flips
-  // `approved`, which routes to a regeneration and, failing that, to a safe
-  // summary. Both beat shipping an empty section.
   //
   // Runs BEFORE the invented-provider check below: that check DELETES free text,
   // so the reverse order would report its own sanitization as empty output.
+  const plannedText = TEXT_SECTIONS.filter((s) => planned.has(s));
   const emptyPlanned: SectionName[] = [];
   if (planned.has("ai_suggestion") && !finalSections.ai_suggestion?.trim()) emptyPlanned.push("ai_suggestion");
   if (planned.has("roadmap") && (finalSections.roadmap?.items.length ?? 0) === 0) emptyPlanned.push("roadmap");
   if (planned.has("skill_focus") && (finalSections.skill_focus?.length ?? 0) === 0) emptyPlanned.push("skill_focus");
   if (planned.has("next_steps") && (finalSections.next_steps?.length ?? 0) === 0) emptyPlanned.push("next_steps");
   if (emptyPlanned.length > 0) {
-    hardIssues.push(
-      `Planned free-text section(s) came back empty: ${emptyPlanned.join(", ")}. Text generation produced no content.`
-    );
+    const named = `Planned free-text section(s) came back empty: ${emptyPlanned.join(", ")}.`;
+    // Genuinely empty = every planned free-text section is empty (total generation
+    // failure). Only then is it an empty ANSWER that must regenerate; otherwise the
+    // answer stands and the gap is recorded without blocking approval.
+    const answerIsEmpty = plannedText.length > 0 && emptyPlanned.length === plannedText.length;
+    if (answerIsEmpty) hardIssues.push(`${named} Text generation produced no content.`);
+    else noteIssues.push(`${named} Other planned sections have content, so the answer is kept.`);
   }
 
   // 6. Free text must not NAME a provider that no verified record backs. There is
@@ -248,7 +270,7 @@ export function sanitizeDraft(
     applyUnsafeFallback(finalSections, input.plan);
   }
 
-  return { finalSections, hardIssues };
+  return { finalSections, hardIssues, noteIssues };
 }
 
 // Replace/remove free-text sections when the soft check flags the answer unsafe.
@@ -376,9 +398,11 @@ export async function runVerificationAgent(
 ): Promise<VerificationAgentOutput> {
   const softCheck = opts?.softCheck ?? runSoftCheck;
 
-  // Layer 1 — always runs.
-  const { finalSections, hardIssues } = sanitizeDraft(input);
-  const issues = [...hardIssues];
+  // Layer 1 — always runs. noteIssues are recorded but do NOT block approval, so an
+  // empty supplementary section on a substantive answer no longer forces the run to
+  // a regeneration and, ultimately, to the safe-summary fallback.
+  const { finalSections, hardIssues, noteIssues } = sanitizeDraft(input);
+  const issues = [...hardIssues, ...noteIssues];
 
   // Layer 2 — judged against the already-sanitized free text.
   const soft = await softCheck(input.query, finalSections, input.careerData);
