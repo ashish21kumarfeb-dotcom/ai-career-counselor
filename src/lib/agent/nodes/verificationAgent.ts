@@ -33,7 +33,15 @@ export async function verificationAgentNode(
   const careerData = state.careerData ?? DEFAULT_CAREER_DATA;
   logHandoff("Recommendation", "Verification", { sections: Object.keys(draftSections) });
 
-  const input: VerificationAgentInput = { query: state.query, plan, draftSections, careerData };
+  // `profile` is passed for GROUNDING EVIDENCE only — the verifier never uses it to
+  // personalize, just to recognize that a figure about the user came from the user.
+  const input: VerificationAgentInput = {
+    query: state.query,
+    plan,
+    draftSections,
+    careerData,
+    profile: state.profileAgent,
+  };
   const verificationResult = await runVerificationAgent(input);
 
   // Backward-compat UI-facing verdict. Note (correction #1): when the soft check was

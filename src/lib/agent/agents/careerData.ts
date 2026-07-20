@@ -99,6 +99,14 @@ export async function runCareerDataAgent(
   // calls, catching a provider outage into [] so a Tavily failure degrades to an
   // empty (but sourced-honest) result with the reason recorded in the tool-call —
   // it never fabricates data and never breaks the workflow.
+  //
+  // A PROVIDER outage and a TRANSPORT fallback are different failures and must not
+  // be conflated (see externalNote below): callTool sets degradedReason whenever the
+  // MCP path was not used — including the ordinary local case of MCP_ENABLED being
+  // unset — which says nothing about whether the search itself succeeded. Only
+  // direct() actually throwing means the provider was unavailable, so that is
+  // recorded separately, here, where it is known.
+  const providerFailed = new Set<string>();
   const externalCall = (
     want: boolean,
     tool: string,
@@ -108,6 +116,7 @@ export async function runCareerDataAgent(
       ? callTool<ExternalResult>(tool, { query, limit: 5 }, externalResultSchema, () =>
           direct().catch((e) => {
             console.error(`Career Data Agent: ${tool} failed:`, e);
+            providerFailed.add(tool);
             return [] as ExternalResult[];
           })
         )
@@ -191,17 +200,32 @@ export async function runCareerDataAgent(
   // External tools note ONLY when they actually ran (never on a skipped tool): a
   // degraded run says the provider was unavailable; an empty-but-ok run says nothing
   // on-topic was found. Both keep the audit honest without inventing data.
-  const externalNote = (label: string, res: ToolCallResult<ExternalResult>): void => {
-    if (res.transport === "skipped") return;
-    if (res.degradedReason) {
-      missingDataNotes.push(`No verified external ${label} available (external provider unavailable).`);
-    } else if (res.data.length === 0) {
-      missingDataNotes.push(`No verified external ${label} found for this query.`);
-    }
+  //
+  // A note is emitted ONLY when the lane actually came back empty. It used to key on
+  // `degradedReason`, which callTool sets for ANY non-MCP call — so in the normal
+  // local configuration (MCP_ENABLED unset) a lane that had just returned five
+  // sourced results still reported "No verified external market signals available
+  // (external provider unavailable)". That note is read by the Recommendation Agent
+  // as RETRIEVAL STATUS — "searched and NOT found, treat as a gap in the evidence" —
+  // so the prompt told the model its own evidence did not exist while listing it two
+  // paragraphs above. That contradiction, not the retrieval, is why a query with good
+  // market data still answered as though it had none. Transport degradation is
+  // already reported honestly and separately, in toolCalls.
+  const externalNote = (
+    label: string,
+    tool: string,
+    res: ToolCallResult<ExternalResult>
+  ): void => {
+    if (res.transport === "skipped" || res.data.length > 0) return;
+    missingDataNotes.push(
+      providerFailed.has(tool)
+        ? `No verified external ${label} available (external provider unavailable).`
+        : `No verified external ${label} found for this query.`
+    );
   };
-  externalNote("career roadmaps", roadmapResult);
-  externalNote("market signals", marketResult);
-  externalNote("industry articles", articleResult);
+  externalNote("career roadmaps", "searchCareerRoadmaps", roadmapResult);
+  externalNote("market signals", "searchMarketSignals", marketResult);
+  externalNote("industry articles", "searchIndustryArticles", articleResult);
 
   // sourcesUsed records everything that grounds the rendered answer: the DB
   // agencies + resource docs, plus the external (Tavily) sourced results now that

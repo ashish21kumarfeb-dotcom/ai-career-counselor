@@ -14,7 +14,7 @@
 // their CHILD. The common columns therefore describe the child (education =
 // child's class, interests = child's interests) and careerGoal = the parent's
 // concern. Downstream summaries/prompt must frame these as the child's, not the
-// parent's — see agents/profile.ts and nodes/generate.ts.
+// parent's — see agents/profile.ts and agents/recommendation.ts (buildContext).
 
 // The user types offered in onboarding. `job_switcher` is intentionally absent —
 // it remains valid in the DB enum for legacy rows but is folded into

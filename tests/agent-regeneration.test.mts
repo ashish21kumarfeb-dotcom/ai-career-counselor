@@ -6,7 +6,11 @@ import "dotenv/config";
 import { routeAfterVerification, MAX_REGENERATIONS } from "../src/lib/agent/graph";
 import { deriveFinalStatus } from "../src/lib/agent/nodes/persistTrace";
 import { safeFallbackNode } from "../src/lib/agent/nodes/safeFallback";
-import { buildRecommendedFix, SAFE_FALLBACK_TEXT } from "../src/lib/agent/agents/verification";
+import {
+  buildRecommendedFix,
+  SAFE_FALLBACK_TEXT,
+  GENERATION_FAILED_TEXT,
+} from "../src/lib/agent/agents/verification";
 import { verificationAgentOutputSchema } from "../src/lib/agent/agents/contracts";
 import type { AgentStateType } from "../src/lib/agent/state";
 import type { VerificationAgentOutput } from "../src/lib/agent/agents/contracts";
@@ -31,6 +35,7 @@ function makeState(over: Partial<AgentStateType>): AgentStateType {
   return {
     userId: "00000000-0000-0000-0000-000000000000",
     query: "how do I become a data analyst?",
+    history: [], originalQuery: "",
     runId: "", trace: [], recommendationId: undefined, memoryUpdate: undefined, persist: false,
     intent: "career_advice", profile: undefined, memory: [], ragDocs: [],
     plan: { sections: ["ai_suggestion", "roadmap"], reasoning: "test" },
@@ -216,7 +221,15 @@ if (!process.env.GROQ_API_KEY) {
       console.log("  produced an empty draft, which verification rejects by design, so the");
       console.log("  'retry accepted' expectations cannot be exercised. Asserting fail-closed.");
       check("degraded retry still terminates in a safe fallback", deriveFinalStatus(r as AgentStateType) === "fallback");
-      check("degraded retry never ships an empty answer", r.sections?.ai_suggestion === SAFE_FALLBACK_TEXT);
+      // Non-empty, AND honest about why: this degraded path is a generation FAILURE
+      // (the LLM call never returned text), not a draft that was judged ungrounded,
+      // so it must not be reported to the user as a deliberate safety summary.
+      check("degraded retry never ships an empty answer", !!r.sections?.ai_suggestion?.trim());
+      check(
+        "generation failure is reported as an outage, not as a safety decision",
+        r.sections?.ai_suggestion === GENERATION_FAILED_TEXT,
+        JSON.stringify(r.sections?.ai_suggestion)?.slice(0, 70)
+      );
     } else {
       check("no safe_fallback (the retry was accepted)", !(r.trace ?? []).some((e) => e.step === "safe_fallback"));
       check("finalStatus is 'regenerated', not 'approved'", deriveFinalStatus(r as AgentStateType) === "regenerated");
@@ -235,7 +248,12 @@ if (!process.env.GROQ_API_KEY) {
       console.log("  that the degraded path still terminates safely instead.");
       check("degraded run loops at most once", steps.filter((s) => s === "recommendation_agent").length <= 2, JSON.stringify(steps));
       check("degraded run terminates", steps.includes("log_turn"));
-      check("degraded run never ships an empty answer", r.sections?.ai_suggestion === SAFE_FALLBACK_TEXT);
+      check("degraded run never ships an empty answer", !!r.sections?.ai_suggestion?.trim());
+      check(
+        "generation failure is reported as an outage, not as a safety decision",
+        r.sections?.ai_suggestion === GENERATION_FAILED_TEXT,
+        JSON.stringify(r.sections?.ai_suggestion)?.slice(0, 70)
+      );
     } else {
       check("recommendation ran once", steps.filter((s) => s === "recommendation_agent").length === 1, JSON.stringify(steps));
       check("regenerationAttempts stays 0", r.regenerationAttempts === 0);

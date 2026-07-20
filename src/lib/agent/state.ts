@@ -4,6 +4,7 @@
 // results, generated sections, verification, and logId are added in later steps.
 import { Annotation } from "@langchain/langgraph";
 import type { Intent } from "../ai/intent";
+import type { ChatTurn } from "../ai/resolveQuery";
 import type { getProfileByUserId } from "../profile/queries";
 import type { MemoryEntry } from "../memory/queries";
 import type { RetrievedDocument } from "../documents/queries";
@@ -46,6 +47,31 @@ export const AgentState = Annotation.Root({
   // Inputs (provided at invoke).
   userId: Annotation<string>(),
   query: Annotation<string>(),
+  // Recent turns of the active conversation, sent by the client. Used ONLY by the
+  // resolve_query node to rewrite a follow-up into a standalone question; empty on
+  // the first turn (or for callers that send no history).
+  history: Annotation<ChatTurn[]>({ reducer: lastValue, default: () => [] }),
+  // The raw user message as typed, preserved after resolve_query overwrites `query`
+  // with the resolved standalone form. Empty until that node runs.
+  //
+  // WHICH CHANNEL SHOULD A NODE READ? The rule, and it is not optional:
+  //
+  //   `query`         — anything that ACTS ON the question. Intent, planner, the
+  //                     regex gates, retrieval/tokenization, generation, grounding
+  //                     evidence. These want the resolved standalone form; that is
+  //                     the entire point of rewriting a follow-up, and reading the
+  //                     raw text here would break multi-turn resolution.
+  //
+  //   `originalQuery` — anything that RECORDS or DERIVES DURABLE STATE FROM the
+  //                     user. Memory extraction (nodes/memory.ts) and turn logging
+  //                     (nodes/log.ts). A rewrite is the machine's paraphrase; it
+  //                     must never be stored as something the user said, and must
+  //                     never become the input to a fact that outlives the run.
+  //
+  // Always read it as `state.originalQuery || state.query` — it defaults to "" and
+  // is only populated once resolve_query has run, so a direct/partial invocation
+  // (tests) would otherwise see an empty string.
+  originalQuery: Annotation<string>({ reducer: lastValue, default: () => "" }),
   // Correlation id for the whole run, supplied by the caller (the route mints a
   // uuid; tests pass a fixed one). Deliberately NOT defaulted to a random value
   // here: a hidden per-run default would be untestable and could silently differ

@@ -219,6 +219,10 @@ export const verificationAgentOutputSchema = z.object({
   issues: z.array(z.string()),
   verificationNotes: z.string(),
   recommendedFix: z.string().optional(),
+  // Optional so existing hand-off fixtures stay valid, mirroring `roadmaps` /
+  // `toolLatencyMs` above; runVerificationAgent always sets it (to [] when the
+  // grounding policy found nothing to flag).
+  unsupportedClaims: z.array(z.string()).optional(),
   finalSections: responseSectionsSchema,
 });
 
@@ -237,6 +241,10 @@ export interface VerificationAgentInput {
   plan: AgentPlan;
   draftSections: ResponseSections;
   careerData: CareerDataAgentOutput;
+  // Optional Profile Agent envelope, used ONLY as grounding evidence: the user's own
+  // profile, memory and constraints are the source for any figure about the user, so
+  // restating "you have 3 years of experience" must not read as an unsupported claim.
+  profile?: ProfileAgentOutput;
 }
 
 export interface VerificationAgentOutput {
@@ -249,6 +257,9 @@ export interface VerificationAgentOutput {
   issues: string[];
   verificationNotes: string;
   recommendedFix?: string;
+  // The exact figures the deterministic grounding policy could not trace to any
+  // retrieved evidence. Empty when nothing was flagged.
+  unsupportedClaims?: string[];
   // The response after any sanitization (offending sections dropped / unsafe text
   // replaced). Equal to the input draftSections when nothing had to change.
   finalSections: ResponseSections;

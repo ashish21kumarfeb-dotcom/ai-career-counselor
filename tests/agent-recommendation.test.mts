@@ -18,6 +18,7 @@ import type { AgentPlan, SectionName } from "../src/lib/agent/schema";
 import {
   assembleSections,
   buildContext,
+  coerceTextSections,
   hasVerifiedResources,
   runRecommendationAgent,
   type TextSections,
@@ -187,6 +188,63 @@ console.log("\n== A. External sourced results injected into grounding context ==
   check("no external block when there are no external results", !ctxNone.includes("EXTERNAL SOURCED REFERENCES"), ctxNone);
   const ctxRoadmapsOnly = buildContext(profile, { ...emptyCareerData, roadmaps: cdExternal.roadmaps });
   check("only non-empty lanes render", ctxRoadmapsOnly.includes("Career roadmaps") && !ctxRoadmapsOnly.includes("Labor-market signals"));
+}
+
+console.log("\n== A. Schema-mismatch repair (coerceTextSections) ==");
+{
+  // On-spec output passes through untouched.
+  const ok = coerceTextSections(
+    { ai_suggestion: "Cyber security salaries vary by role.", roadmap: ["Learn networking"] },
+    ["ai_suggestion", "roadmap"]
+  );
+  check("on-spec output passes through", ok.ai_suggestion === "Cyber security salaries vary by role.");
+  check("on-spec array passes through", sameSet(ok.roadmap ?? [], ["Learn networking"]));
+
+  // The reported failure: plan wants ai_suggestion only, model nests the others inside it.
+  const nested = coerceTextSections(
+    {
+      ai_suggestion: {
+        roadmap: ["Start with SOC analyst roles"],
+        skill_focus: ["Networking"],
+        next_steps: ["Compare salary bands"],
+      },
+    },
+    ["ai_suggestion"]
+  );
+  check("nested object recovered as prose", typeof nested.ai_suggestion === "string" && nested.ai_suggestion.length > 0, JSON.stringify(nested));
+  check("nested content is not lost", (nested.ai_suggestion ?? "").includes("SOC analyst"), nested.ai_suggestion);
+  check("unrequested keys dropped", sameSet(Object.keys(nested), ["ai_suggestion"]), JSON.stringify(Object.keys(nested)));
+
+  // Envelope wrapper.
+  const wrapped = coerceTextSections(
+    { response: { ai_suggestion: "Salaries range widely.", next_steps: ["Research bands"] } },
+    ["ai_suggestion", "next_steps"]
+  );
+  check("envelope unwrapped", wrapped.ai_suggestion === "Salaries range widely.");
+  check("envelope sibling array recovered", sameSet(wrapped.next_steps ?? [], ["Research bands"]));
+
+  // Type slips: string where an array was asked for, objects inside an array.
+  const slipped = coerceTextSections(
+    { roadmap: "Learn networking", skill_focus: [{ skill: "SIEM", why: "core to SOC work" }] },
+    ["roadmap", "skill_focus"]
+  );
+  check("string coerced to a single-item array", sameSet(slipped.roadmap ?? [], ["Learn networking"]), JSON.stringify(slipped.roadmap));
+  check("object list item flattened to text", (slipped.skill_focus ?? []).some((s) => s.includes("SIEM")), JSON.stringify(slipped.skill_focus));
+
+  // Requested-but-absent keys stay absent (assembly supplies the safe empty).
+  const partial = coerceTextSections({ ai_suggestion: "Only this." }, ["ai_suggestion", "roadmap"]);
+  check("absent requested key omitted", partial.roadmap === undefined);
+
+  // Unrecoverable payload -> empty, not a crash.
+  check("garbage payload -> {}", Object.keys(coerceTextSections("nope", ["ai_suggestion"])).length === 0);
+  check("null payload -> {}", Object.keys(coerceTextSections(null, ["ai_suggestion"])).length === 0);
+
+  // Requested keys are never invented from unrequested siblings.
+  const extra = coerceTextSections(
+    { ai_suggestion: "Answer.", agencies: ["Invented Co"] },
+    ["ai_suggestion"]
+  );
+  check("non-text sibling ignored", sameSet(Object.keys(extra), ["ai_suggestion"]), JSON.stringify(Object.keys(extra)));
 }
 
 console.log("\n== A. Contract validation (I/O DTOs) ==");

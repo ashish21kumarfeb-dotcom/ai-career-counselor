@@ -98,6 +98,16 @@ export const SEARCH_INTENTS: SearchIntent[] = [
     strategy: { corpus: "general" },
   },
   {
+    // Quantitative labour-market facts that are not pay: openings, employment
+    // levels, attrition, published statistics. Evergreen — official statistics and
+    // job-board aggregates live on the general web, not in the news index. Named
+    // separately from `salary` so the trace shows WHICH kind of figure was sought.
+    name: "market_statistics",
+    priority: 50,
+    pattern: /\b(openings?|vacanc\w*|headcount|statistic\w*|employment|unemploy\w*|workforce|attrition|turnover|how many)\b/,
+    strategy: { corpus: "general" },
+  },
+  {
     name: "skills",
     priority: 50,
     pattern: /\b(skills?|upskill\w*|competenc\w*|proficienc\w*)\b/,

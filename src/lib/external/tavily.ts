@@ -155,16 +155,42 @@ export async function tavilySearch(
 // sourced-only + no-guarantee framing, keeps market signals descriptive of a cited
 // source rather than a prediction; (2) the trusted-quality signal in rankByFocus()
 // below, so a reputable source is preferred as a tie-breaker in every lane.
-const MARKET_SIGNAL_DOMAINS = [
+// Two bands, because "reputable for labour-market facts" is not one list.
+//
+// STATISTICAL: official statistics offices, multilaterals, and the pay/openings
+// aggregators that publish per-occupation figures. These carry data for EVERY
+// occupation a country employs — nurses, electricians, teachers, accountants,
+// chefs — not just the ones a consultancy writes about. The original list leaned on
+// consulting/tech-industry publishers, which is why a non-tech profession could pass
+// the gate, reach the network, and still come back with nothing: the include_domains
+// filter had no source that covers it.
+const STATISTICAL_DOMAINS = [
   "bls.gov",
   "oecd.org",
-  "weforum.org",
-  "mckinsey.com",
-  "gartner.com",
-  "linkedin.com",
-  "nasscom.in",
+  "ilo.org",
+  "eurostat.ec.europa.eu",
+  "ec.europa.eu",
+  "stats.govt.nz",
+  "abs.gov.au",
+  "ons.gov.uk",
+  "statcan.gc.ca",
+  "data.gov.in",
+  "mospi.gov.in",
+  "payscale.com",
+  "salary.com",
+  "glassdoor.com",
+  "indeed.com",
+  "levels.fyi",
+  "ambitionbox.com",
   "naukri.com",
+  "linkedin.com",
 ];
+
+// ANALYST: industry/consulting coverage. Good for trend and outlook framing, thin
+// for per-occupation numbers, so it widens the market lane rather than defining it.
+const ANALYST_DOMAINS = ["weforum.org", "mckinsey.com", "gartner.com", "nasscom.in"];
+
+const MARKET_SIGNAL_DOMAINS = [...STATISTICAL_DOMAINS, ...ANALYST_DOMAINS];
 const TRUSTED_DOMAINS: ReadonlySet<string> = new Set(MARKET_SIGNAL_DOMAINS);
 
 // --- Query focusing, synonym expansion, and focus-aware re-ranking ------------
@@ -312,19 +338,34 @@ export function searchCareerRoadmaps(query: string, limit = 5): Promise<External
   }).then((rows) => rankByFocus(rows, vocab, TRUSTED_DOMAINS).slice(0, limit));
 }
 
-export function searchMarketSignals(query: string, limit = 5): Promise<ExternalResult[]> {
+export async function searchMarketSignals(query: string, limit = 5): Promise<ExternalResult[]> {
   const { subject, vocab } = focusFor(query);
   const { strategy } = resolveSearchStrategy(query);
   // Corpus is intent-driven: an evergreen demand/outlook question -> general (where
   // role-specific hiring content actually lives); a breaking market question
-  // (layoffs, hiring freeze) -> news. include_domains stays the market-signals
-  // trusted-source safety model, unchanged.
-  return tavilySearch(`${subject} hiring demand job market outlook`, {
-    topic: strategy.corpus,
-    days: strategy.days,
-    maxResults: candidatePool(limit),
-    includeDomains: MARKET_SIGNAL_DOMAINS,
-  }).then((rows) => rankByFocus(rows, vocab, TRUSTED_DOMAINS).slice(0, limit));
+  // (layoffs, hiring freeze) -> news.
+  const search = (includeDomains?: string[]) =>
+    tavilySearch(`${subject} hiring demand job market outlook`, {
+      topic: strategy.corpus,
+      days: strategy.days,
+      maxResults: candidatePool(limit),
+      includeDomains,
+    });
+
+  // Trusted-domain-first, then widen. The include_domains filter is a PRECISION
+  // control, and precision that returns nothing is indistinguishable from a fact
+  // that does not exist — which is exactly the failure mode for professions the
+  // trusted list under-covers. So: prefer the trusted corpus, and only when it
+  // yields nothing at all, retry the open web. The widened pass is not a weaker
+  // safety model — every downstream invariant still applies unchanged (sourced-only
+  // normalize(), rankByFocus still ranks trusted sources above the rest, numeric
+  // grounding still requires the figure to appear in retrieved text, and
+  // verification still strips unbacked claims). A provider failure THROWS from the
+  // first call, so an outage still degrades via the caller's catch — it never
+  // silently becomes a widened search.
+  const trusted = await search(MARKET_SIGNAL_DOMAINS);
+  const rows = trusted.length > 0 ? trusted : await search();
+  return rankByFocus(rows, vocab, TRUSTED_DOMAINS).slice(0, limit);
 }
 
 export function searchIndustryArticles(query: string, limit = 5): Promise<ExternalResult[]> {

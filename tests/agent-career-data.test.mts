@@ -126,6 +126,61 @@ try {
   check("no courses when not planned", r5.courses.length === 0);
   check("no agencies when not planned", r5.agencies.length === 0);
   check("no missingDataNotes when nothing DB-backed is planned", r5.missingDataNotes.length === 0, JSON.stringify(r5.missingDataNotes));
+
+  // A lane that RETURNED RESULTS must never also be reported as unavailable.
+  //
+  // missingDataNotes are injected into the Recommendation Agent prompt as RETRIEVAL
+  // STATUS — "searched and NOT found, treat as a gap in the evidence". The note used
+  // to key on callTool's `degradedReason`, which is set for ANY non-MCP call,
+  // including the ordinary local case of MCP_ENABLED being unset. So a market lane
+  // that had just returned five sourced results still emitted "No verified external
+  // market signals available (external provider unavailable)", and the prompt told
+  // the model its own evidence did not exist while listing it two paragraphs above.
+  // That contradiction is why a query with good market data still answered as though
+  // it had none. Transport degradation is reported separately, in toolCalls.
+  console.log("\n== a lane with results is never reported as unavailable ==");
+  {
+    const external = process.env.EXTERNAL_SEARCH_ENABLED;
+    const mcp = process.env.MCP_ENABLED;
+    // MCP off is the condition that used to poison the note. External search on, so
+    // the lanes actually run. Skips cleanly when no provider key is configured.
+    process.env.MCP_ENABLED = "false";
+    process.env.EXTERNAL_SEARCH_ENABLED = "true";
+    try {
+      if (!process.env.TAVILY_API_KEY) {
+        console.log("  SKIPPED (no TAVILY_API_KEY configured)");
+      } else {
+        const r6 = await runCareerDataAgent(
+          input("What is the average salary for cyber security jobs in India?", ["ai_suggestion"])
+        );
+        const ran = r6.toolCalls.filter((c) => c.transport !== "skipped");
+        check(
+          "transport degradation is still reported honestly in toolCalls",
+          ran.some((c) => !!c.degradedReason),
+          JSON.stringify(ran)
+        );
+        for (const [label, rows] of [
+          ["market signals", r6.marketSignals ?? []],
+          ["industry articles", r6.industryArticles ?? []],
+        ] as const) {
+          if (rows.length === 0) {
+            console.log(`  (lane "${label}" returned nothing this run — nothing to assert)`);
+            continue;
+          }
+          check(
+            `"${label}" returned ${rows.length} result(s) and is NOT called unavailable`,
+            !r6.missingDataNotes.some((n) => n.includes(label)),
+            JSON.stringify(r6.missingDataNotes)
+          );
+        }
+      }
+    } finally {
+      if (external === undefined) delete process.env.EXTERNAL_SEARCH_ENABLED;
+      else process.env.EXTERNAL_SEARCH_ENABLED = external;
+      if (mcp === undefined) delete process.env.MCP_ENABLED;
+      else process.env.MCP_ENABLED = mcp;
+    }
+  }
 } finally {
   await cleanup();
   console.log("\ncleaned up fixtures.");

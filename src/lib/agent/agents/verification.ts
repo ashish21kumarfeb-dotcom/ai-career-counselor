@@ -19,6 +19,7 @@
 import { z } from "zod";
 import { getGroq, CHAT_MODEL } from "../../ai/client";
 import { verificationAgentOutputSchema } from "./contracts";
+import { checkFactualGrounding, describeUnsupported, UNSUPPORTED_CLAIM_ISSUE } from "./grounding";
 import type { AgentPlan, ResponseSections, SectionName } from "../schema";
 import type {
   CareerDataAgentOutput,
@@ -29,6 +30,18 @@ import type {
 // Safe replacement for free-text sections when the soft check flags them unsafe.
 export const SAFE_FALLBACK_TEXT =
   "To keep this grounded and safe, here is a careful summary: review the verified resources and steps shown below. Career outcomes depend on your skills, preparation, and market demand — there are no guarantees.";
+
+// Marker for the one rejection that is NOT a grounding or safety judgement: the
+// generator produced nothing at all, which happens when the LLM call itself failed
+// (rate limit, outage, network). Exported so the terminal fallback can tell the two
+// apart — see nodes/safeFallback.ts — instead of describing an infrastructure
+// failure to the user as a deliberate decision to withhold an answer.
+export const EMPTY_ANSWER_ISSUE = "Text generation produced no content.";
+
+// What the user is told when no answer could be generated at all. Says what actually
+// happened, and does not imply the question was unanswerable or unsafe.
+export const GENERATION_FAILED_TEXT =
+  "I couldn't generate an answer this time — the language model was unavailable when this request ran. This is a temporary technical problem, not a judgement about your question. Please try again in a few minutes; anything already retrieved for you is shown below.";
 
 // Stable identity for an agency, so an invented agency (name/source/website not in
 // the Career Data output) is detected regardless of item ordering.
@@ -163,10 +176,16 @@ const TEXT_SECTIONS: SectionName[] = ["ai_suggestion", "roadmap", "skill_focus",
 // Never throws. Exported for direct testing.
 export function sanitizeDraft(
   input: VerificationAgentInput
-): { finalSections: ResponseSections; hardIssues: string[]; noteIssues: string[] } {
+): {
+  finalSections: ResponseSections;
+  hardIssues: string[];
+  noteIssues: string[];
+  unsupportedClaims: string[];
+} {
   const finalSections: ResponseSections = structuredClone(input.draftSections);
   const hardIssues: string[] = [];
   const noteIssues: string[] = [];
+  const unsupportedClaims: string[] = [];
   const planned = new Set<SectionName>(input.plan.sections);
 
   // 1. Remove any section not in the plan.
@@ -250,11 +269,37 @@ export function sanitizeDraft(
     // failure). Only then is it an empty ANSWER that must regenerate; otherwise the
     // answer stands and the gap is recorded without blocking approval.
     const answerIsEmpty = plannedText.length > 0 && emptyPlanned.length === plannedText.length;
-    if (answerIsEmpty) hardIssues.push(`${named} Text generation produced no content.`);
+    if (answerIsEmpty) hardIssues.push(`${named} ${EMPTY_ANSWER_ISSUE}`);
     else noteIssues.push(`${named} Other planned sections have content, so the answer is kept.`);
   }
 
-  // 6. Free text must not NAME a provider that no verified record backs. There is
+  // 6. Free text must not ASSERT a quantitative fact that no retrieved evidence
+  // backs. Same shape as the provider check below — prose asserted something
+  // checkable, so check it — generalized from named providers to magnitudes, which
+  // is what makes it cover salary, growth, hiring counts, rankings and timelines
+  // with one rule rather than one rule each.
+  //
+  // Runs BEFORE the provider check for the same reason the emptiness check does:
+  // that check REPLACES the free text with the safe summary, and a report about
+  // text this function itself deleted is noise.
+  //
+  // The remedy is a hard issue ONLY — deliberately NOT applyUnsafeFallback. An
+  // unsupported figure is a repairable defect: the existing loop regenerates once
+  // with the offending values named, and only a second failure reaches the safe
+  // summary. Gutting a good answer on first sight of a number would cost more
+  // usefulness than the number was worth.
+  const grounding = checkFactualGrounding(finalSections, {
+    careerData: input.careerData,
+    query: input.query,
+    profile: input.profile,
+  });
+  if (grounding.unsupported.length > 0) {
+    const described = describeUnsupported(grounding.unsupported);
+    hardIssues.push(described);
+    unsupportedClaims.push(...grounding.unsupported.flatMap((c) => c.values.map((v) => v.raw)));
+  }
+
+  // 7. Free text must not NAME a provider that no verified record backs. There is
   // nothing to subset the prose against, so the remedy is the one the soft check
   // already uses — replace the free text with the safe summary — but decided here,
   // deterministically, so it holds when the soft check is unavailable.
@@ -270,7 +315,7 @@ export function sanitizeDraft(
     applyUnsafeFallback(finalSections, input.plan);
   }
 
-  return { finalSections, hardIssues, noteIssues };
+  return { finalSections, hardIssues, noteIssues, unsupportedClaims };
 }
 
 // Replace/remove free-text sections when the soft check flags the answer unsafe.
@@ -383,6 +428,16 @@ export function buildRecommendedFix(issues: string[]): string | undefined {
   if (issues.some((i) => i.startsWith("Planned free-text section(s) came back empty"))) {
     parts.push("Produce real content for EVERY requested section — an empty or omitted section is not an answer.");
   }
+  // An unsupported figure needs a DIFFERENT instruction from an invented provider:
+  // "name none" is not actionable for a number. The model is told the two legal
+  // moves — drop the figure, or keep the guidance and mark it explicitly as an
+  // estimate — so the retry has a way to stay useful instead of just going quiet.
+  if (issues.some((i) => i.startsWith(UNSUPPORTED_CLAIM_ISSUE))) {
+    parts.push(
+      "Remove every figure listed below, or keep the guidance and state explicitly that it is an unverified estimate.",
+      "Give a figure as fact ONLY if that exact figure appears in the provided context. Never invent salaries, percentages, growth rates, hiring counts, rankings or timelines."
+    );
+  }
   parts.push(
     "Rewrite the free-text sections so that every one of the problems below is gone.",
     "Use ONLY the agencies, courses and links supplied in the context — if the context lists none, name none.",
@@ -401,7 +456,7 @@ export async function runVerificationAgent(
   // Layer 1 — always runs. noteIssues are recorded but do NOT block approval, so an
   // empty supplementary section on a substantive answer no longer forces the run to
   // a regeneration and, ultimately, to the safe-summary fallback.
-  const { finalSections, hardIssues, noteIssues } = sanitizeDraft(input);
+  const { finalSections, hardIssues, noteIssues, unsupportedClaims } = sanitizeDraft(input);
   const issues = [...hardIssues, ...noteIssues];
 
   // Layer 2 — judged against the already-sanitized free text.
@@ -418,11 +473,23 @@ export async function runVerificationAgent(
     applyUnsafeFallback(finalSections, input.plan);
     issues.push("Soft verification flagged the answer as unsafe; free-text was replaced with a safe summary.");
   }
+  // The grounding verdict now PARTICIPATES instead of merely being reported. It is
+  // gated on availability exactly like `safe` is — an unavailable check reports
+  // grounded:false because it is UNCONFIRMED (line above), and treating unconfirmed
+  // as rejected would make every answer collapse to the safe summary whenever the
+  // model is flaky. Unlike `safe`, it does NOT replace the free text here: the
+  // remedy for ungrounded prose is the regeneration loop, not a gutted answer.
+  if (softCheckAvailable && !soft.grounded) {
+    issues.push("Soft verification flagged the answer as not grounded in the available sources.");
+  }
   if (!softCheckAvailable) {
     issues.push(`Soft verification unavailable: ${soft.notes}`);
   }
 
-  const approved = hardIssues.length === 0 && !(softCheckAvailable && !soft.safe);
+  const approved =
+    hardIssues.length === 0 &&
+    !(softCheckAvailable && !soft.safe) &&
+    !(softCheckAvailable && !soft.grounded);
 
   const noteParts: string[] = [approved ? "Passed verification." : "Verification applied corrections."];
   if (!softCheckAvailable) noteParts.push("Soft grounding/safety check was not available — not confirmed.");
@@ -439,6 +506,9 @@ export async function runVerificationAgent(
     // Only meaningful when the draft was rejected — this is what the
     // Recommendation Agent regenerates against.
     recommendedFix: approved ? undefined : buildRecommendedFix(issues),
+    // The exact figures the grounding policy could not trace to evidence. Surfaced
+    // so the trace can show WHICH number failed rather than only that one did.
+    unsupportedClaims,
     finalSections,
   };
 

@@ -43,6 +43,9 @@ export async function POST(request: Request) {
     const result = await agentGraph.invoke({
       userId: session.userId,
       query: parsed.data.message,
+      // Active-conversation context for follow-up resolution. Empty when absent, so
+      // the resolve_query node leaves the query untouched (first-turn behaviour).
+      history: parsed.data.history ?? [],
       runId,
       // persist defaults true: the graph updates memory, logs the turn, and
       // flushes the audit trace to agent_runs.

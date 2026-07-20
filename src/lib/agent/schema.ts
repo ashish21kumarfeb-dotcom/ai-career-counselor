@@ -144,16 +144,50 @@ const MARKET_TERMS =
 const ARTICLE_TERMS =
   /\b(industr\w*|news|article\w*|insight\w*|report\w*|analysis|latest|current|recent|update\w*|state of|overview|development\w*)\b/i;
 
+// --- Factual market data: the class of question that CANNOT be answered from model
+// weights, only from retrieved evidence ------------------------------------------
+//
+// The gates above ask "does the query want this KIND of signal". This one asks a
+// different, sharper question: "does answering require a CURRENT FACT about the
+// world?" — a pay figure, a headcount, an opening count, a growth rate, an
+// employment statistic. For those, model knowledge is stale-by-construction and
+// unciteable, so retrieval is not an enhancement, it is the precondition for
+// answering at all. MARKET_TERMS did not cover this vocabulary (it had no
+// salary/pay/openings/statistics terms), so the single most common market-data
+// question — "what does an X earn in Y?" — reached the Recommendation Agent with
+// zero evidence and had nothing to ground on.
+//
+// Deliberately PROFESSION-AGNOSTIC: every term describes a shape of fact (money,
+// headcount, rate, statistic, quantity question), never a role, sector, or stack.
+// It therefore fires identically for a nurse, a welder, a chartered accountant, a
+// chef, and a backend engineer. The one currency token list is the only regional
+// vocabulary, and it only ADDS recall.
+const FACTUAL_DATA_TERMS =
+  /\b(salar\w*|pay|paid|paying|compensation|remunerat\w*|wages?|earn\w*|income|stipend|package|\bctc\b|\blpa\b|per annum|hourly rate|\bfees?\b|cost of|openings?|vacanc\w*|headcount|recruit\w*|placement\w*|job (?:count|numbers?)|statistic\w*|\bdata\b|figures?|numbers?|percentage|percent|\brate\b|ratio|average|median|typical|benchmark\w*|employment|unemploy\w*|workforce|labou?r market|attrition|turnover|how much|how many|how long|what does .{0,40}\b(?:earn|make|pay)\b)\b/i;
+
 export function careerRoadmapGate(query: string): boolean {
   return ROADMAP_TERMS.test(query);
 }
 
+// True when answering needs a current, citable fact about the world rather than
+// general advice. This is the trigger for external retrieval, and it is exported so
+// the planner, the retrieval boundary, and the Recommendation Agent all decide
+// "does this need evidence?" from ONE definition instead of three drifting ones.
+export function factualDataGate(query: string): boolean {
+  return FACTUAL_DATA_TERMS.test(query);
+}
+
+// Both external evidence lanes open for a factual-data query, not just the market
+// lane. A pay or demand figure quoted from a single hit is fragile; the industry
+// lane widens the corpus so the same fact can appear in more than one source, which
+// is also what gives the numeric grounding check something to match against. The
+// lanes stay independently gated for every other kind of query.
 export function marketSignalGate(query: string): boolean {
-  return MARKET_TERMS.test(query);
+  return MARKET_TERMS.test(query) || factualDataGate(query);
 }
 
 export function industryArticleGate(query: string): boolean {
-  return ARTICLE_TERMS.test(query);
+  return ARTICLE_TERMS.test(query) || factualDataGate(query);
 }
 
 // Turn proposed needs into the final, gated section list (stable order). Agencies

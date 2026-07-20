@@ -15,7 +15,22 @@
 // this", and shipping the second gutted attempt as if it were an answer would be
 // the overclaim this workflow exists to avoid. It is rare by construction: it
 // needs two consecutive rejections.
-import { SAFE_FALLBACK_TEXT } from "../agents/verification";
+//
+// TWO DISTINCT FAILURES, TWO DISTINCT MESSAGES. The safe summary above is the right
+// thing to say when a real draft was written twice and rejected twice — the workflow
+// judged the prose and declined to stand behind it. It is the WRONG thing to say
+// when no draft was ever written, which is what happens when the LLM call itself
+// fails (rate limit, outage): the generator returns nothing, verification correctly
+// rejects an empty answer, the retry hits the same dead provider, and the run lands
+// here. Reporting that as "to keep this grounded and safe" tells the user their
+// question was answered carefully when in fact it was never answered at all — and
+// hides an outage behind a safety message, which is the one thing a run that exists
+// to be auditable must not do.
+import {
+  SAFE_FALLBACK_TEXT,
+  GENERATION_FAILED_TEXT,
+  EMPTY_ANSWER_ISSUE,
+} from "../agents/verification";
 import type { ResponseSections } from "../schema";
 import type { AgentStateType } from "../state";
 
@@ -27,8 +42,14 @@ export async function safeFallbackNode(
   // keeps must still have been through the hard checks.
   const sections: ResponseSections = { ...(state.verificationResult?.finalSections ?? state.sections ?? {}) };
 
+  // Verification already distinguished these cases; read its verdict rather than
+  // re-deriving it here.
+  const generationFailed = !!state.verificationResult?.issues.some((i) =>
+    i.includes(EMPTY_ANSWER_ISSUE)
+  );
+
   if (plan?.sections.includes("ai_suggestion")) {
-    sections.ai_suggestion = SAFE_FALLBACK_TEXT;
+    sections.ai_suggestion = generationFailed ? GENERATION_FAILED_TEXT : SAFE_FALLBACK_TEXT;
   } else {
     delete sections.ai_suggestion;
   }

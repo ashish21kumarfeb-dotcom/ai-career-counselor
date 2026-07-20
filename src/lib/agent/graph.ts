@@ -17,6 +17,7 @@
 import { StateGraph, START, END } from "@langchain/langgraph";
 import { AgentState } from "./state";
 import { traced } from "./trace/recorder";
+import { resolveQueryNode } from "./nodes/resolveQuery";
 import { intentNode } from "./nodes/intent";
 import { plannerNode } from "./nodes/planner";
 import { profileAgentNode } from "./nodes/profileAgent";
@@ -61,6 +62,22 @@ export function buildAgentGraph(overrides: GraphOverrides = {}) {
   const verification = overrides.verificationNode ?? verificationAgentNode;
   // Node names must not collide with state channel names.
   return new StateGraph(AgentState)
+    .addNode(
+      "resolve_query",
+      // Context-aware query resolution: rewrites a follow-up into a standalone
+      // question using the active conversation, so intent/planner/retrieval/
+      // generation all act on the resolved form. The trace records what the
+      // follow-up was expanded to (or that it was left as-is).
+      traced("resolve_query", "intent", resolveQueryNode, (p) => {
+        const rewrote = !!p.originalQuery && p.originalQuery !== p.query;
+        return {
+          summary: rewrote
+            ? `rewrote follow-up: ${JSON.stringify(p.originalQuery)} -> ${JSON.stringify(p.query)}`
+            : "standalone query (no rewrite)",
+          detail: { originalQuery: p.originalQuery, resolvedQuery: p.query, rewrote },
+        };
+      })
+    )
     .addNode(
       "extract_intent",
       traced("extract_intent", "intent", intentNode, (p) => ({
@@ -201,6 +218,9 @@ export function buildAgentGraph(overrides: GraphOverrides = {}) {
             grounded: v?.grounded,
             safe: v?.safe,
             softCheckAvailable: v?.softCheckAvailable,
+            // WHICH figure failed grounding, not merely that one did — the trace is
+            // the only place a reviewer can see what the gate actually caught.
+            unsupportedClaims: v?.unsupportedClaims ?? [],
             issues: v?.issues ?? [],
           },
         };
@@ -263,7 +283,8 @@ export function buildAgentGraph(overrides: GraphOverrides = {}) {
     )
     // Terminal trace flush. Untraced by design — see nodes/persistTrace.ts.
     .addNode("persist_trace", persistTraceNode)
-    .addEdge(START, "extract_intent")
+    .addEdge(START, "resolve_query")
+    .addEdge("resolve_query", "extract_intent")
     .addEdge("extract_intent", "planner")
     .addEdge("planner", "profile_agent")
     .addEdge("profile_agent", "career_data_agent")

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ChatPanel } from "./ChatPanel";
 import { CareerNavigator } from "./CareerNavigator";
 import type { AgentResponse, Turn } from "./types";
+import { buildHistory } from "./history";
 
 // The Career Chat workspace. Starts as a simple centered chat (intro + chips +
 // input). After the first successful agent response it transitions into a split
@@ -42,6 +43,9 @@ export function CareerWorkspace() {
 
     setError(null);
     setMessage("");
+    // Snapshot the PRIOR turns (before appending this message) as the active
+    // conversation context, so the server can resolve follow-up references.
+    const history = buildHistory(turns);
     setTurns((prev) => [...prev, { role: "user", content: trimmed }]);
     setLoading(true);
 
@@ -49,7 +53,7 @@ export function CareerWorkspace() {
       const res = await fetch("/api/agent-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: trimmed }),
+        body: JSON.stringify({ message: trimmed, history }),
       });
 
       if (res.status === 401) {

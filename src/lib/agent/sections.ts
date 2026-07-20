@@ -1,7 +1,7 @@
 // Shared, LLM-free helpers for building the DB-backed response sections
-// (agencies, resources, courses). Extracted verbatim from nodes/generate.ts so
-// the same mappers can be reused by the Career Data Agent and the Recommendation
-// Agent without either one re-implementing (or re-inventing) verified data.
+// (agencies, resources, courses). These mappers are shared by the Career Data
+// Agent and the Recommendation Agent so neither one re-implements (or
+// re-invents) verified data.
 //
 // CRITICAL GUARANTEE preserved: every item here is mapped DIRECTLY from a tool
 // result row — the LLM never writes these. A requested-but-empty section yields

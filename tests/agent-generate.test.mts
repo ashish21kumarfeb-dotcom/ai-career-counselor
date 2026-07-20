@@ -7,7 +7,7 @@
 //      resource availability, and a verification verdict is recorded.
 // Run: npm run test:generate   (Part B requires GROQ_API_KEY + DATABASE_URL)
 import "dotenv/config";
-import { buildDbSections } from "../src/lib/agent/nodes/generate";
+import { buildDbSections } from "../src/lib/agent/sections";
 import { agentGraph } from "../src/lib/agent/graph";
 import type { RetrievedDocument } from "../src/lib/documents/queries";
 import type { RetrievedAgency } from "../src/lib/agencies/queries";

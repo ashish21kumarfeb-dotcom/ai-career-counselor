@@ -28,3 +28,9 @@ export const CHAT_MODEL = process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile";
 // GROQ_INTENT_MODEL in .env.
 export const INTENT_MODEL =
   process.env.GROQ_INTENT_MODEL ?? "llama-3.1-8b-instant";
+
+// Model for the context-aware query-resolution pass (rewriting a follow-up into a
+// standalone question before the pipeline runs). Defaults to the cheap INTENT_MODEL
+// since the task is a small, structured rewrite; override with GROQ_REWRITE_MODEL.
+export const REWRITE_MODEL =
+  process.env.GROQ_REWRITE_MODEL ?? INTENT_MODEL;

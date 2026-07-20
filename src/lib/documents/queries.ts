@@ -34,6 +34,16 @@ const STOPWORDS = new Set([
 // document, so a match on one of these ALONE does not make a document relevant —
 // it must also match a specific topic term. These mirror the resource-gate
 // vocabulary but are used here to DEMOTE, not to gate.
+// The second block (from "market" on) is MARKET-QUESTION FRAMING: the words a user
+// wraps around a subject when asking about the state of a field — "what is the
+// current market scope for X", "average salary for Y", "is there demand for Z".
+// They are not topics, and treating them as topics is how a question about one
+// field retrieved documents about another: the framing matched, the subject did not.
+// The external-search layer already strips exactly this vocabulary (FOCUS_STOPWORDS
+// in src/lib/external/tavily.ts) to isolate the subject; DB retrieval did not, so the
+// two layers disagreed about what the query was even ABOUT. Listed here they are
+// DEMOTED, not banned: a document may still match them for ranking, it just cannot
+// earn inclusion on them alone.
 const GENERIC_TERMS = new Set([
   "learn", "learning", "roadmap", "roadmaps", "course", "courses", "certification",
   "certificate", "certificates", "certified", "skill", "skills", "career", "careers",
@@ -43,6 +53,11 @@ const GENERIC_TERMS = new Set([
   "upskill", "training", "guide", "guides", "guidance", "professional", "beginner",
   "entry", "level", "online", "free", "best", "top", "start", "starting", "begin",
   "job", "jobs", "role", "roles", "work", "field", "advice", "suggest", "recommend",
+  "market", "markets", "scope", "demand", "trend", "trends", "outlook", "growth",
+  "future", "current", "currently", "latest", "recent", "opportunity",
+  "opportunities", "salary", "salaries", "pay", "compensation", "wage", "wages",
+  "average", "median", "typical", "industry", "industries", "hiring", "employment",
+  "openings", "vacancy", "vacancies", "statistics", "overview", "state", "analysis",
 ]);
 
 // Tokenize into distinct, meaningful lowercase keywords.
@@ -67,16 +82,46 @@ function scoreDocument(
   keywords: string[],
   specific: Set<string>,
   contextTerms: string[]
-): number {
+): { score: number; specificHits: number } {
   const hay = `${content} ${sourceUrl ?? ""}`.toLowerCase();
   let score = 0;
+  let specificHits = 0;
   for (const k of keywords) {
-    if (hay.includes(k)) score += specific.has(k) ? 3 : 1;
+    if (!hay.includes(k)) continue;
+    if (specific.has(k)) {
+      score += 3;
+      specificHits++;
+    } else {
+      score += 1;
+    }
   }
   for (const c of contextTerms) {
     if (!keywords.includes(c) && hay.includes(c)) score += 1;
   }
-  return score;
+  return { score, specificHits };
+}
+
+// How many of the query's specific terms a document must actually contain.
+//
+// THE BUG THIS FIXES: relevance used to be judged only RELATIVELY — keep everything
+// scoring within 60% of the best match. That silently assumes the best match is
+// itself relevant. When the corpus contains NOTHING about the subject, the best
+// match is a false positive and the relative cutoff faithfully preserves it, plus
+// every other document just as wrong. Asked about cyber security, a corpus with no
+// cyber-security document returned two Azure pages, because each happened to list
+// the word "security" among Azure's features. One incidental word out of a two-word
+// subject was scored as a full match, and nothing downstream could tell the
+// difference between "the best we have" and "good enough to show".
+//
+// So: an ABSOLUTE floor. A document must match at least TWO distinct specific terms
+// — enough that a single incidental word cannot carry it — or ALL of them when the
+// query names fewer than two. Deliberately a small constant rather than a fraction
+// of the query length: a long query ("backend developer roles in Bangalore using
+// Python and SQL") should not demand ever more coverage, because its extra terms are
+// refinements, and a document matching two of them is genuinely on topic. Entirely
+// domain-agnostic — it counts term overlap and knows nothing about any field.
+function requiredSpecificHits(specificCount: number): number {
+  return Math.min(2, specificCount);
 }
 
 // Shared relevance-ranked retrieval. `globalHttpOnly` restricts to curated,
@@ -120,9 +165,15 @@ async function retrieve(
     .where(where)
     .limit(Math.max(limit * 6, 24));
 
+  // Absolute floor FIRST (is this document about the subject at all?), then the
+  // relative cutoff below (is it among the better answers?). Order matters: the
+  // relative step is measured against the surviving best, so a corpus that has
+  // nothing on topic now yields an empty result rather than a confidently ranked
+  // list of near-misses.
+  const minHits = requiredSpecificHits(specificArr.length);
   const scored = candidates
-    .map((r) => ({ r, score: scoreDocument(r.content, r.sourceUrl, keywords, specific, contextTerms) }))
-    .filter((x) => x.score > 0)
+    .map((r) => ({ r, ...scoreDocument(r.content, r.sourceUrl, keywords, specific, contextTerms) }))
+    .filter((x) => x.specificHits >= minHits)
     .sort((a, b) => b.score - a.score);
 
   if (scored.length === 0) return [];

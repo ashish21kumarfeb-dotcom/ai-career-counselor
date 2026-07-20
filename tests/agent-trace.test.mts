@@ -33,6 +33,8 @@ function makeState(over: Partial<AgentStateType>): AgentStateType {
   return {
     userId: "00000000-0000-0000-0000-000000000000",
     query: "",
+    history: [],
+    originalQuery: "",
     runId: "",
     trace: [],
     recommendationId: undefined,
@@ -270,7 +272,13 @@ if (!process.env.DATABASE_URL) {
       );
       check("persist_trace does not trace itself", !steps.includes("persist_trace"));
       check("seq is dense and ordered", trace.every((e, i) => e.seq === i), JSON.stringify(trace.map((e) => e.seq)));
-      check("events are in execution order", steps[0] === "extract_intent" && steps[steps.length - 1] === "log_turn");
+      // resolve_query is the graph's entry node (it rewrites a follow-up into a
+      // standalone question before intent extraction), so it is the first event.
+      check(
+        "events are in execution order",
+        steps[0] === "resolve_query" && steps[steps.length - 1] === "log_turn",
+        JSON.stringify(steps)
+      );
       check("every event has a summary", trace.every((e) => typeof e.summary === "string" && e.summary.length > 0));
       check("every status is in the vocabulary", trace.every((e) => (TRACE_STATUSES as readonly string[]).includes(e.status)));
       console.log(`\n  --- trace ---`);
