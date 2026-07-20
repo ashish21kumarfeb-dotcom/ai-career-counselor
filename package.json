@@ -32,6 +32,8 @@
     "test:parse": "tsx tests/resume-parse.test.mts",
     "test:security": "tsx tests/security-boundary.test.mts",
     "test:ratelimit": "tsx tests/rate-limit.test.mts",
+    "test:usage": "tsx tests/usage-accounting.test.mts",
+    "usage:report": "tsx scripts/usage-report.mts",
     "mcp:server": "tsx mcp/server.ts",
     "dev:all": "tsx scripts/dev-all.mts",
     "verify:mcp": "tsx scripts/verify-mcp.mts",

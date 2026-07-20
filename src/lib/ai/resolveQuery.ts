@@ -34,7 +34,8 @@
 // falls back to the ORIGINAL query, so this can never break a chat request.
 
 import { z } from "zod";
-import { getGroq, REWRITE_MODEL } from "./client";
+import { REWRITE_MODEL } from "./client";
+import { createCompletion } from "./usage";
 
 // One prior turn of the active conversation, as sent by the client.
 export type ChatTurn = { role: "user" | "assistant"; content: string };
@@ -216,7 +217,7 @@ export async function resolveQuery(
   if (isTopicShift(query, history)) return query;
 
   try {
-    const completion = await getGroq().chat.completions.create({
+    const completion = await createCompletion("resolve-query", {
       model: REWRITE_MODEL,
       temperature: 0,
       max_tokens: 200,

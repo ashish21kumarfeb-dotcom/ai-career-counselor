@@ -15,7 +15,8 @@
 // invention-safety and section-planning guarantees can be tested deterministically
 // without hitting the model.
 import { z } from "zod";
-import { getGroq, CHAT_MODEL } from "../../ai/client";
+import { CHAT_MODEL } from "../../ai/client";
+import { createCompletion } from "../../ai/usage";
 import { BASE_PROMPT } from "../../ai/prompt";
 import { sourced } from "../sections";
 import { factualDataGate } from "../schema";
@@ -409,7 +410,7 @@ ${renderFeedback(input.feedback)}
 
 Produce the JSON object now with only these keys: ${keys}.`;
 
-  const completion = await getGroq().chat.completions.create({
+  const completion = await createCompletion("recommendation", {
     model: CHAT_MODEL,
     temperature: 0.3,
     max_tokens: 900,

@@ -5,7 +5,8 @@
 // score is stored on ai_recommendations.evaluation_score by the log node.
 // Fault-tolerant: on any failure it records no evaluation (undefined) rather than
 // blocking the response. (RAGAS/DeepEval can replace this later.)
-import { getGroq, CHAT_MODEL } from "../../ai/client";
+import { CHAT_MODEL } from "../../ai/client";
+import { createCompletion } from "../../ai/usage";
 import { evaluationSchema, type EvaluationScore } from "../schema";
 import type { AgentStateType } from "../state";
 
@@ -40,7 +41,7 @@ export async function evaluateNode(
   const availability = `Available sources: ${state.toolResults.agencies.length} verified agencies, ${state.toolResults.resources.length} resource links, ${state.ragDocs.length} knowledge docs. Profile: ${state.profile ? "present" : "absent"}. Memory items: ${state.memory.length}.`;
 
   try {
-    const completion = await getGroq().chat.completions.create({
+    const completion = await createCompletion("evaluation", {
       model: CHAT_MODEL,
       temperature: 0,
       max_tokens: 250,

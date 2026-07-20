@@ -1,4 +1,4 @@
-import { integer, jsonb, pgEnum, pgTable, text, timestamp, unique, uuid, varchar } from "drizzle-orm/pg-core";
+import { boolean, integer, jsonb, pgEnum, pgTable, text, timestamp, unique, uuid, varchar } from "drizzle-orm/pg-core";
 
 export const userRole = pgEnum("user_role", ["user", "admin", "agency_owner"]);
 
@@ -129,6 +129,41 @@ export const agentRuns = pgTable("agent_runs", {
   trace: jsonb("trace"),
   finalStatus: runStatus("final_status").notNull(),
   recommendationId: uuid("recommendation_id").references(() => aiRecommendations.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// One row per LLM call: the token ledger.
+//
+// Exists to answer questions this system could not previously answer at all —
+// how many tokens a run actually costs, which call site dominates, how wide the
+// spread is, and how close the prompt gets to the model's context limit. Every
+// number here is REPORTED BY THE PROVIDER, not estimated locally, so it can be
+// trusted as a basis for setting budgets later.
+//
+// Recorded BEFORE any allocator exists, deliberately. Caps chosen without a
+// measured distribution are guesses that get enforced as if they were policy;
+// the ones that are too tight silently truncate good context and the ones that
+// are too loose never fire. Measure first, then set caps from the data.
+//
+// `run_id` is the agent-chat correlation id, nullable and intentionally NOT a
+// foreign key: usage flushes at the end of a run that may have failed before
+// agent_runs was ever written, and a constraint here would drop exactly the
+// expensive failed runs that are most worth studying. Some calls (resume memory
+// extraction) have no run at all.
+export const llmUsage = pgTable("llm_usage", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  runId: uuid("run_id"),
+  userId: uuid("user_id").references(() => users.id),
+  // Which call site spent the tokens ("intent", "planner", "recommendation", …).
+  callSite: varchar("call_site").notNull(),
+  model: varchar("model").notNull(),
+  promptTokens: integer("prompt_tokens").notNull().default(0),
+  completionTokens: integer("completion_tokens").notNull().default(0),
+  totalTokens: integer("total_tokens").notNull().default(0),
+  durationMs: integer("duration_ms").notNull().default(0),
+  // Set when the call threw: a failed call still consumed wall-clock and may have
+  // consumed tokens, and a ledger that only records successes understates cost.
+  failed: boolean("failed").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

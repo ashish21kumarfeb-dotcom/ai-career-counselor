@@ -16,7 +16,8 @@
 // grounding check (no invented numbers/entities). Fully fault-tolerant — any
 // failure or malformed output returns [] so it never breaks the chat request.
 
-import { getGroq, CHAT_MODEL } from "./client";
+import { CHAT_MODEL } from "./client";
+import { createCompletion } from "./usage";
 
 // Extraction model is env-overridable. Defaults to the stronger answer model
 // (llama-3.3-70b): merge-reasoning and self-containment (e.g. resolving a
@@ -240,7 +241,7 @@ export async function extractMemoriesDetailed(
   message: string
 ): Promise<MemoryExtraction> {
   try {
-    const completion = await getGroq().chat.completions.create({
+    const completion = await createCompletion("memory-extraction", {
       model: MEMORY_MODEL,
       temperature: 0,
       max_tokens: 400,

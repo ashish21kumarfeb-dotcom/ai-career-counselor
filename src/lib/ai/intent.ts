@@ -7,7 +7,8 @@
 // any failure or unrecognized output falls back to "other" so it never breaks
 // the chat request.
 
-import { getGroq, INTENT_MODEL } from "./client";
+import { INTENT_MODEL } from "./client";
+import { createCompletion } from "./usage";
 
 // Fixed intent set. `other` is the catch-all / fallback.
 export const INTENTS = [
@@ -38,7 +39,7 @@ Respond with ONLY the single label, in lowercase, and nothing else.`;
 // on any error or unexpected model output.
 export async function classifyIntent(message: string): Promise<Intent> {
   try {
-    const completion = await getGroq().chat.completions.create({
+    const completion = await createCompletion("intent", {
       model: INTENT_MODEL,
       temperature: 0,
       max_tokens: 10,

@@ -15,7 +15,8 @@
 // the demo can tell a modelled plan from a regex one. The graph always gets a
 // valid plan, and `plan: AgentPlan` keeps its exact previous shape so
 // /api/agent-chat and the UI are untouched.
-import { getGroq, CHAT_MODEL } from "../../ai/client";
+import { CHAT_MODEL } from "../../ai/client";
+import { createCompletion } from "../../ai/usage";
 import { plannerProposalSchema, PROMPT_VOCABULARY, type PlannerProposal } from "../plan/types";
 import { finalizeExecutionPlan, fallbackProposal } from "../plan/finalize";
 import type { AgentStateType } from "../state";
@@ -56,7 +57,7 @@ async function proposePlan(state: AgentStateType): Promise<PlannerProposal> {
   const userInput = `User query: ${JSON.stringify(state.query)}
 Detected intent: ${state.intent}`;
 
-  const completion = await getGroq().chat.completions.create({
+  const completion = await createCompletion("planner", {
     model: CHAT_MODEL,
     temperature: 0,
     max_tokens: 500,

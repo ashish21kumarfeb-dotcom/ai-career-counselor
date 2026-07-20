@@ -6,6 +6,12 @@ import { screenChatInput, SCREEN_BLOCK_MESSAGE } from "../../../lib/chat/screen"
 import { agentGraph } from "../../../lib/agent/graph";
 import { saveRun } from "../../../lib/agent/trace/queries";
 import { consumeRateLimit, userSubject, CHAT_LIMIT } from "../../../lib/rate-limit/queries";
+import {
+  withUsageCapture,
+  flushUsage,
+  summarizeUsage,
+  type UsageRow,
+} from "../../../lib/ai/usage";
 
 // The Career Chat route. Runs the LangGraph workflow:
 // intent -> context (profile + memory + RAG) -> planner -> tools (DB-only agency
@@ -69,17 +75,27 @@ export async function POST(request: Request) {
   // so a failed run can still be recorded below.
   const runId = randomUUID();
 
+  // Token ledger for this run. Owned here, not by the capture helper, so the rows
+  // survive a throw and the failure path can still record what the run spent —
+  // a run that died halfway through a seven-call pipeline is precisely the one
+  // whose cost is worth knowing.
+  const usageRows: UsageRow[] = [];
+
   try {
-    const result = await agentGraph.invoke({
-      userId: session.userId,
-      query: parsed.data.message,
-      // Active-conversation context for follow-up resolution. Empty when absent, so
-      // the resolve_query node leaves the query untouched (first-turn behaviour).
-      history: parsed.data.history ?? [],
-      runId,
-      // persist defaults true: the graph updates memory, logs the turn, and
-      // flushes the audit trace to agent_runs.
-    });
+    const result = await withUsageCapture({ runId, userId: session.userId }, usageRows, () =>
+      agentGraph.invoke({
+        userId: session.userId,
+        query: parsed.data.message,
+        // Active-conversation context for follow-up resolution. Empty when absent, so
+        // the resolve_query node leaves the query untouched (first-turn behaviour).
+        history: parsed.data.history ?? [],
+        runId,
+        // persist defaults true: the graph updates memory, logs the turn, and
+        // flushes the audit trace to agent_runs.
+      })
+    );
+
+    await flushUsage(usageRows);
 
     // The dynamic sections are unchanged. Additionally expose the EXTERNAL (Tavily)
     // sourced results and the per-tool MCP transport records — both already computed
@@ -102,11 +118,19 @@ export async function POST(request: Request) {
         tools: cd?.toolCalls ?? [],
         verification: result.verification,
         evaluation: result.evaluation,
+        // Per-run token totals. Surfaced on the response as well as persisted so
+        // the cost of a turn is visible while developing without querying the DB.
+        // Read-only reporting — nothing acts on these numbers yet, by design:
+        // the allocator comes after there is a measured distribution to size it
+        // against.
+        usage: summarizeUsage(usageRows),
       },
       { status: 200 }
     );
   } catch (error) {
     console.error("agent-chat graph error:", error);
+    // Record what the failed run spent before anything else.
+    await flushUsage(usageRows);
     // The graph threw, so persist_trace never ran and the run would otherwise
     // vanish. Record the failure — an audit trace that only keeps successes is
     // worse than none. Best-effort: never let it mask the original error.

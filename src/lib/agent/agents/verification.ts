@@ -17,7 +17,8 @@
 // The soft check is dependency-injected (opts.softCheck) so every branch is testable
 // deterministically without hitting the model; the default is the real Groq call.
 import { z } from "zod";
-import { getGroq, CHAT_MODEL } from "../../ai/client";
+import { CHAT_MODEL } from "../../ai/client";
+import { createCompletion } from "../../ai/usage";
 import { verificationAgentOutputSchema } from "./contracts";
 import { checkFactualGrounding, describeUnsupported, UNSUPPORTED_CLAIM_ISSUE } from "./grounding";
 import type { AgentPlan, ResponseSections, SectionName } from "../schema";
@@ -390,7 +391,7 @@ export async function runSoftCheck(
       `Note: mentioning any agency, link, or external source from the lists above IS grounded.`,
     ].join("\n");
 
-    const completion = await getGroq().chat.completions.create({
+    const completion = await createCompletion("verification", {
       model: CHAT_MODEL,
       temperature: 0,
       max_tokens: 200,
