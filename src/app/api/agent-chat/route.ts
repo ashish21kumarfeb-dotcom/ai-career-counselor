@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { getSession } from "../../../lib/auth/session";
 import { chatSchema } from "../../../lib/chat/validation";
+import { screenChatInput, SCREEN_BLOCK_MESSAGE } from "../../../lib/chat/screen";
 import { agentGraph } from "../../../lib/agent/graph";
 import { saveRun } from "../../../lib/agent/trace/queries";
 
@@ -32,6 +33,18 @@ export async function POST(request: Request) {
       },
       { status: 400 }
     );
+  }
+
+  // Input screening. Placed after schema validation (so the fields exist) and
+  // before the graph (so a blocked request costs nothing downstream). Logged
+  // rather than silently dropped — a screen whose hits are invisible cannot be
+  // tuned, and a rise in blocks is itself a signal worth seeing.
+  const screen = screenChatInput(parsed.data.message, parsed.data.history ?? []);
+  if (screen.blocked) {
+    console.warn(
+      `agent-chat input screened: reason=${screen.reason} where=${screen.where} user=${session.userId}`
+    );
+    return NextResponse.json({ error: SCREEN_BLOCK_MESSAGE }, { status: 400 });
   }
 
   // Correlation id for the whole run. Minted here (not defaulted inside the
