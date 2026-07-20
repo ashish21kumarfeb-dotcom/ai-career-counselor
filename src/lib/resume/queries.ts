@@ -1,12 +1,20 @@
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "../../db";
 import { documents } from "../../db/schema";
+import { redactPII } from "../documents/redact";
 
 // Resume documents are stored in the shared `documents` table as user-owned rows
 // (type "resume", user_id set). Being user-owned, they are visible only to their
 // owner's RAG grounding (see searchDocuments scoping) — never to other users.
 // The sourceUrl carries a non-http marker so a resume is never mistaken for a
 // citable external resource link (searchResources requires an http source_url).
+//
+// PII is redacted HERE, at the write, rather than at each call site. Scoping keeps
+// a resume away from other users; redaction keeps the identifiers out of the row
+// in the first place, so no future scoping bug, prompt leak, or provider request
+// can expose them. Making it a property of the write means every caller inherits
+// it — the route also redacts before deriving its preview and memory facts, and
+// redactPII is idempotent, so the double application is harmless.
 
 const RESUME_SOURCE_PREFIX = "resume-upload/";
 
@@ -29,7 +37,7 @@ export async function upsertResume(userId: string, content: string, filename: st
     .values({
       userId,
       type: "resume",
-      content,
+      content: redactPII(content).text,
       sourceUrl: `${RESUME_SOURCE_PREFIX}${filename}`,
     })
     .returning({ id: documents.id, createdAt: documents.createdAt });

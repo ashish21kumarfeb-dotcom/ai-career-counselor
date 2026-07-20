@@ -4,6 +4,7 @@ import { parseResumeFile } from "../../../lib/resume/parse";
 import { upsertResume, getResumeByUserId, resumeFilename } from "../../../lib/resume/queries";
 import { extractMemories } from "../../../lib/ai/memory";
 import { upsertMemory } from "../../../lib/memory/queries";
+import { redactPII } from "../../../lib/documents/redact";
 
 // Resume upload: accepts a PDF / DOCX / TXT file, extracts its text, stores it as
 // the user's resume document (available to THEIR RAG grounding only), and best-
@@ -76,8 +77,15 @@ export async function POST(request: Request) {
     );
   }
 
+  // Redact once, up front, and use the redacted text for EVERYTHING downstream:
+  // the stored document, the memory extraction (which writes durable rows of its
+  // own, and whose LLM call would otherwise ship the raw resume to the provider),
+  // and the preview echoed back to the client. The raw `text` is not referenced
+  // past this line.
+  const { text: safeText } = redactPII(text);
+
   try {
-    await upsertResume(session.userId, text, file.name);
+    await upsertResume(session.userId, safeText, file.name);
   } catch (error) {
     console.error("Resume store failed:", error);
     return NextResponse.json({ error: "Could not save your resume." }, { status: 500 });
@@ -85,7 +93,7 @@ export async function POST(request: Request) {
 
   // Extract durable facts into memory — best-effort, never fails the upload.
   try {
-    const facts = await extractMemories(text);
+    const facts = await extractMemories(safeText);
     for (const fact of facts) {
       await upsertMemory(session.userId, fact.key, fact.value);
     }
@@ -94,7 +102,7 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json(
-    { ok: true, filename: file.name, chars: text.length, preview: text.slice(0, 400) },
+    { ok: true, filename: file.name, chars: safeText.length, preview: safeText.slice(0, 400) },
     { status: 200 }
   );
 }
