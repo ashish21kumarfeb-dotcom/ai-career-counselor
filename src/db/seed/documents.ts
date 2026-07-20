@@ -18,6 +18,8 @@ import "dotenv/config";
 import { inArray, like, or } from "drizzle-orm";
 import { db } from "../index";
 import { documents } from "../schema";
+import { createDocument } from "../../lib/documents/write";
+import { chunkDocument } from "../../lib/documents/chunk";
 
 const SEED_PREFIX = "internal-seed/";
 
@@ -148,14 +150,19 @@ async function seed() {
       )
     );
 
-  const inserted = await db
-    .insert(documents)
-    .values([...SEED_DOCUMENTS, ...RESOURCE_DOCUMENTS])
-    .returning({ id: documents.id, sourceUrl: documents.sourceUrl });
+  // Inserted one at a time through createDocument rather than as one bulk insert:
+  // retrieval reads chunks, so a bulk insert straight into `documents` would seed
+  // a corpus that the retriever cannot see. The extra round trips are irrelevant
+  // for a seed script that runs by hand.
+  const inserted: Array<{ id: string; sourceUrl: string; chunks: number }> = [];
+  for (const doc of [...SEED_DOCUMENTS, ...RESOURCE_DOCUMENTS]) {
+    const id = await createDocument(doc);
+    inserted.push({ id, sourceUrl: doc.sourceUrl, chunks: chunkDocument(doc.content).length });
+  }
 
   console.log(`Seeded ${inserted.length} documents:`);
   for (const d of inserted) {
-    console.log(`  ${d.sourceUrl}  (${d.id})`);
+    console.log(`  ${d.sourceUrl}  (${d.id}, ${d.chunks} chunk${d.chunks === 1 ? "" : "s"})`);
   }
 }
 

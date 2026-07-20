@@ -132,6 +132,36 @@ export const agentRuns = pgTable("agent_runs", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// Retrievable passages of a document.
+//
+// Retrieval reads THIS table, not `documents` — a document is the unit of
+// ownership and provenance, a chunk is the unit of matching. Keeping them
+// separate means the source row stays the single place a resume or article
+// lives (one delete, one owner, one source_url) while the text can be
+// re-segmented at will by re-running the backfill.
+//
+// ON DELETE CASCADE is the load-bearing constraint here. Resume replacement
+// deletes the old `documents` row on every upload, and orphaned chunks would
+// stay retrievable forever — the previous resume's content grounding answers
+// after the user replaced it, which is both wrong and a privacy failure. The
+// database enforces that, not application code.
+//
+// `chunk_index` is the passage's ordinal within its document, unique per
+// document so a re-chunk cannot silently double the corpus.
+export const documentChunks = pgTable(
+  "document_chunks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    chunkIndex: integer("chunk_index").notNull(),
+    content: text("content").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [unique("document_chunks_doc_index_unique").on(t.documentId, t.chunkIndex)]
+);
+
 // One row per LLM call: the token ledger.
 //
 // Exists to answer questions this system could not previously answer at all —

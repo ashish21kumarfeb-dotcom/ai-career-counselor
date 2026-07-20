@@ -1,7 +1,7 @@
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "../../db";
 import { documents } from "../../db/schema";
-import { redactPII } from "../documents/redact";
+import { createDocument } from "../documents/write";
 
 // Resume documents are stored in the shared `documents` table as user-owned rows
 // (type "resume", user_id set). Being user-owned, they are visible only to their
@@ -9,11 +9,12 @@ import { redactPII } from "../documents/redact";
 // The sourceUrl carries a non-http marker so a resume is never mistaken for a
 // citable external resource link (searchResources requires an http source_url).
 //
-// PII is redacted HERE, at the write, rather than at each call site. Scoping keeps
-// a resume away from other users; redaction keeps the identifiers out of the row
-// in the first place, so no future scoping bug, prompt leak, or provider request
-// can expose them. Making it a property of the write means every caller inherits
-// it — the route also redacts before deriving its preview and memory facts, and
+// PII is redacted at the write, rather than at each call site. Scoping keeps a
+// resume away from other users; redaction keeps the identifiers out of the row in
+// the first place, so no future scoping bug, prompt leak, or provider request can
+// expose them. It now lives in createDocument (documents/write.ts) alongside
+// chunking, so the chunk copies cannot preserve what the source row stripped —
+// the route also redacts before deriving its preview and memory facts, and
 // redactPII is idempotent, so the double application is harmless.
 
 const RESUME_SOURCE_PREFIX = "resume-upload/";
@@ -32,15 +33,23 @@ export async function upsertResume(userId: string, content: string, filename: st
     .delete(documents)
     .where(and(eq(documents.userId, userId), eq(documents.type, "resume")));
 
+  // Via createDocument so the resume is chunked on the way in. Retrieval reads
+  // chunks, so a resume inserted directly here would be stored, shown in the UI,
+  // and silently absent from the user's own grounding.
+  //
+  // The delete above removes the prior resume row, and document_chunks cascades
+  // from it — the replaced resume's passages cannot outlive it.
+  const id = await createDocument({
+    userId,
+    type: "resume",
+    content,
+    sourceUrl: `${RESUME_SOURCE_PREFIX}${filename}`,
+  });
+
   const [row] = await db
-    .insert(documents)
-    .values({
-      userId,
-      type: "resume",
-      content: redactPII(content).text,
-      sourceUrl: `${RESUME_SOURCE_PREFIX}${filename}`,
-    })
-    .returning({ id: documents.id, createdAt: documents.createdAt });
+    .select({ id: documents.id, createdAt: documents.createdAt })
+    .from(documents)
+    .where(eq(documents.id, id));
 
   return row;
 }
