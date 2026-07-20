@@ -33,6 +33,7 @@
     "test:security": "tsx tests/security-boundary.test.mts",
     "test:ratelimit": "tsx tests/rate-limit.test.mts",
     "test:usage": "tsx tests/usage-accounting.test.mts",
+    "test:membounds": "tsx tests/memory-bounds.test.mts",
     "usage:report": "tsx scripts/usage-report.mts",
     "mcp:server": "tsx mcp/server.ts",
     "dev:all": "tsx scripts/dev-all.mts",

@@ -37,10 +37,17 @@ const config: RateLimitConfig = {
   windowMs: 60_000,
 };
 
-// A fixed timestamp mid-window, so the run is independent of when it executes and
-// cannot straddle a real window boundary.
-const T0 = 1_700_000_000_000;
-const windowMid = T0 + 10_000;
+// A timestamp safely inside the CURRENT window.
+//
+// Anchored to real time on purpose. An earlier version used a fixed 2023
+// constant for determinism, which made the suite intermittently fail: that
+// window is far older than the sweep's cutoff (now - 2 x windowMs), so the
+// probabilistic cleanup inside consumeRateLimit would occasionally delete the
+// test's own counters mid-run and a later assertion would read 0. The sweep was
+// behaving correctly — the test was asserting on rows it had itself marked as
+// garbage. Quantization inside the limiter keeps this deterministic anyway: any
+// instant in the window maps to the same row.
+const windowMid = Date.now();
 
 try {
   console.log("\n== consumption within the window ==");
