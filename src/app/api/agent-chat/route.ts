@@ -5,6 +5,7 @@ import { chatSchema } from "../../../lib/chat/validation";
 import { screenChatInput, SCREEN_BLOCK_MESSAGE } from "../../../lib/chat/screen";
 import { agentGraph } from "../../../lib/agent/graph";
 import { saveRun } from "../../../lib/agent/trace/queries";
+import { consumeRateLimit, userSubject, CHAT_LIMIT } from "../../../lib/rate-limit/queries";
 
 // The Career Chat route. Runs the LangGraph workflow:
 // intent -> context (profile + memory + RAG) -> planner -> tools (DB-only agency
@@ -15,6 +16,22 @@ export async function POST(request: Request) {
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
+  // Rate limit before parsing the body: the limiter's job is to cap what an
+  // authenticated caller can spend, and a malformed request that reaches the
+  // handler has already cost a session lookup. Keyed on the user id, which is the
+  // only identity worth limiting here — every path below this point requires a
+  // session, so there is no anonymous traffic to key on an IP instead.
+  const limit = await consumeRateLimit(userSubject(session.userId), CHAT_LIMIT);
+  if (!limit.allowed) {
+    return NextResponse.json(
+      {
+        error:
+          "You've hit the hourly limit for this assistant. Please try again shortly.",
+      },
+      { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } }
+    );
   }
 
   let body: unknown;

@@ -5,6 +5,7 @@ import { upsertResume, getResumeByUserId, resumeFilename } from "../../../lib/re
 import { extractMemories } from "../../../lib/ai/memory";
 import { upsertMemory } from "../../../lib/memory/queries";
 import { redactPII } from "../../../lib/documents/redact";
+import { consumeRateLimit, userSubject, RESUME_LIMIT } from "../../../lib/rate-limit/queries";
 
 // Resume upload: accepts a PDF / DOCX / TXT file, extracts its text, stores it as
 // the user's resume document (available to THEIR RAG grounding only), and best-
@@ -40,6 +41,16 @@ export async function POST(request: Request) {
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
+  // Limited before the multipart body is read: parsing a 5 MB upload and running
+  // a PDF through pdfjs is the expensive part, and the point is not to pay it.
+  const limit = await consumeRateLimit(userSubject(session.userId), RESUME_LIMIT);
+  if (!limit.allowed) {
+    return NextResponse.json(
+      { error: "Too many resume uploads in the last hour. Please try again shortly." },
+      { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } }
+    );
   }
 
   let form: FormData;

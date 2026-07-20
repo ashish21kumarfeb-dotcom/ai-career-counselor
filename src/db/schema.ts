@@ -132,6 +132,37 @@ export const agentRuns = pgTable("agent_runs", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// Fixed-window rate-limit counters.
+//
+// In Postgres rather than memory because there is no other shared state. Next.js
+// route handlers on a serverless host run in short-lived, independently scaled
+// instances: a module-level Map would give each instance its own private counter,
+// so the effective limit would be (configured limit x number of live instances)
+// and would reset on every cold start. That is not a rate limit, it is a rate
+// suggestion. Neon is already the one thing every instance agrees on.
+//
+// One row per (subject, bucket, window_start). The window start is quantized by
+// the caller, which makes the row key deterministic and lets the whole check be a
+// single atomic `INSERT … ON CONFLICT DO UPDATE SET count = count + 1 RETURNING
+// count`. That matters on the neon-http driver, where each statement is its own
+// HTTP round trip and there is no transaction to wrap a read-then-write in — a
+// read-modify-write here would race two concurrent requests into the same count.
+//
+// `subject` is a scheme-prefixed identity ("user:<uuid>"), so limits keyed on
+// different things cannot collide in the same namespace.
+export const rateLimits = pgTable(
+  "rate_limits",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    subject: varchar("subject").notNull(),
+    bucket: varchar("bucket").notNull(),
+    windowStart: timestamp("window_start").notNull(),
+    count: integer("count").notNull().default(0),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [unique("rate_limits_subject_bucket_window_unique").on(t.subject, t.bucket, t.windowStart)]
+);
+
 export const consultingAgencies = pgTable("consulting_agencies", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: varchar("name").notNull(),
