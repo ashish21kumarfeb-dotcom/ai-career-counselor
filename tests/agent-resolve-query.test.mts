@@ -9,6 +9,12 @@
 // Every case here is deterministic: each one exercises a path that returns BEFORE
 // the LLM call, so the suite needs no model and no network.
 // Run: npm run test:resolve
+//
+// dotenv is loaded even though no case here reaches the model or the database: the
+// resolver module imports createCompletion, which imports the db client, which
+// throws at module load when DATABASE_URL is unset. The env requirement comes from
+// the import graph, not from anything this suite asserts.
+import "dotenv/config";
 import {
   resolveQuery,
   isTopicShift,

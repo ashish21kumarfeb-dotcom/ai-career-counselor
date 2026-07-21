@@ -2,6 +2,12 @@
 // the soft LLM check is dependency-injected with stubs, so every branch (clean /
 // unsafe / unavailable) is exercised without any LLM or DB call.
 // Run: npm run test:verify
+//
+// The "no DB call" above is still true of the TEST — but the module under test
+// imports createCompletion, which imports the db client, which throws at module
+// load when DATABASE_URL is unset. Loading dotenv satisfies the import graph
+// without giving this suite any actual database dependency.
+import "dotenv/config";
 import {
   runVerificationAgent,
   sanitizeDraft,

@@ -6,6 +6,15 @@
 // good answer is rejected). The second half is the larger half on purpose — a
 // grounding gate that rejects useful advice is worse than no gate.
 // Run: npm run test:grounding
+//
+// Loads dotenv despite never touching the database. This suite asserts nothing
+// about persistence, but it imports verification.ts, which imports createCompletion
+// from ai/usage, which imports the db client — and that client THROWS at module
+// load when DATABASE_URL is unset, before a single test runs. So the requirement is
+// an artifact of the import graph, not of what is being tested: usage accounting
+// put a db import behind every LLM call site. Keeping the env load here is cheaper
+// than making the test mock a module it does not exercise.
+import "dotenv/config";
 import {
   checkFactualGrounding,
   extractValues,
