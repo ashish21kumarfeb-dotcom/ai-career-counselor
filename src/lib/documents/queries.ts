@@ -1,20 +1,42 @@
-import { and, eq, ilike, isNull, or } from "drizzle-orm";
+import { and, eq, ilike, isNull, or, sql, type SQL } from "drizzle-orm";
 import { db } from "../../db";
 import { documents, documentChunks } from "../../db/schema";
 import { TARGET_CHUNK_CHARS } from "./chunk";
 
-// Keyword retrieval for the RAG / resource slices. Deliberately minimal (no
-// embeddings, no pgvector, no full-text search yet — those are deferred), but
-// RELEVANCE-AWARE: a document is only relevant if it matches a SPECIFIC (topic)
-// term from the query, not merely a generic learning word.
+// Keyword retrieval for the RAG / resource slices. Backed by Postgres full-text
+// search (no embeddings yet — that is the next step), and RELEVANCE-AWARE: a
+// document is only relevant if it matches a SPECIFIC (topic) term from the query,
+// not merely a generic learning word.
 //
-// Why this matters: a naive OR-ILIKE over every query token pulls in unrelated
+// Why that matters: a naive match over every query token pulls in unrelated
 // documents. For "I want to learn Azure", the tokens are "learn" + "azure";
 // "learn" alone matches almost every learning doc (roadmaps, "learners",
 // "MDN Learn…"), drowning out (or faking) relevance. So we split tokens into
 // generic learning words vs. specific topic words, require a specific-word match
 // for inclusion, and rank by a relevance score. If the query carries no specific
 // topic term, we return [] rather than guess — no unrelated links.
+//
+// WHY FULL-TEXT SEARCH AND NOT ILIKE. This lane used to fetch a fixed slice of
+// substring matches and rank them in JavaScript. Two things were wrong with that,
+// and only one of them was a tuning problem:
+//
+//   1. The slice was ARBITRARY. `LIMIT 48` with no ORDER BY returns whichever 48
+//      rows Postgres reaches first, so all the careful scoring below ranked a
+//      random sample of the matches. At seed-corpus size the sample was usually
+//      the whole set and the bug was invisible; it becomes silent, unfixable recall
+//      loss the moment the corpus outgrows the pool. Ranking now happens in SQL,
+//      so the pool is the TOP-N by relevance rather than the first N encountered.
+//   2. `%data%` is a character sequence, not a word. It matched "database",
+//      "metadata" and "update" — which is precisely what the two-specific-term
+//      floor and the 60% relative cutoff below were compensating for. A tsquery
+//      for `data` matches the word `data`, and matches "analysts" for `analyst`
+//      because the 'english' configuration stems both sides. Fewer false
+//      positives AND better recall, from the same change.
+//
+// The scoring SHAPE is deliberately preserved: specific terms weigh 3x generic /
+// context terms, and length is damped logarithmically. ts_rank_cd's normalization
+// flag 1 divides by 1 + log(length), which is the same curve the hand-written
+// normalizer implemented — so this is the same policy, computed where the data is.
 
 export type RetrievedDocument = {
   id: string;
@@ -73,33 +95,65 @@ function tokenize(text: string): string[] {
   );
 }
 
-// Relevance score for a document against the query keywords. Specific (topic)
-// matches weigh heavily; generic learning-word matches add a little; extra
-// context terms (profile skills / career goal) nudge ranking but never grant
-// inclusion on their own.
-function scoreDocument(
-  content: string,
-  sourceUrl: string | null,
-  keywords: string[],
-  specific: Set<string>,
-  contextTerms: string[]
-): { score: number; specificHits: number } {
-  const hay = `${content} ${sourceUrl ?? ""}`.toLowerCase();
-  let score = 0;
-  let specificHits = 0;
-  for (const k of keywords) {
-    if (!hay.includes(k)) continue;
-    if (specific.has(k)) {
-      score += 3;
-      specificHits++;
-    } else {
-      score += 1;
-    }
-  }
-  for (const c of contextTerms) {
-    if (!keywords.includes(c) && hay.includes(c)) score += 1;
-  }
-  return { score, specificHits };
+// --- tsquery construction ------------------------------------------------------
+// Terms reach here already reduced to [a-z0-9]+ by tokenize(); contextTerms come
+// from the profile and are normalized the same way rather than trusted. That is
+// what makes the interpolation below safe to read: a term can never carry tsquery
+// operators (`&`, `|`, `!`, `:*`, parentheses), so the query shape is ours alone.
+// Terms are still bound as parameters, not concatenated into SQL.
+function ftsTerms(terms: string[]): string[] {
+  return [...new Set(terms.flatMap((t) => t.toLowerCase().split(/[^a-z0-9]+/)).filter(Boolean))];
+}
+
+// Any-of. Inclusion is decided by the specific-hit floor below, not by the tsquery,
+// so ORing keeps the candidate pool wide and lets ranking do the discriminating.
+function anyOf(terms: string[]): SQL {
+  return sql`to_tsquery('english', ${terms.join(" | ")})`;
+}
+
+// How many of `terms` this passage contains, counted per term and stem-aware in
+// the database. Deliberately DISTINCT-term counting, not ts_rank: rank returns one
+// blended number in which "matches one term ten times" and "matches two terms once"
+// are hard to tell apart, and both the floor and the weighting below depend on
+// telling them apart. Repetition is not evidence of relevance; coverage is.
+function hitsExpr(terms: string[]): SQL<number> {
+  const parts = terms.map(
+    (t) => sql`(${documentChunks.searchVector} @@ to_tsquery('english', ${t}))::int`
+  );
+  return sql<number>`(${sql.join(parts, sql` + `)})`;
+}
+
+// Relevance score. Specific (topic) matches weigh 3x; generic learning words and
+// context terms (profile skills / career goal) nudge the ranking but never grant
+// inclusion on their own — the floor is counted only over specific terms.
+//
+// The ts_rank_cd term is a bounded TIE-BREAKER, not the ranking. Coverage counting
+// makes every passage matching the same terms score identically, and among those,
+// the one where the terms actually cluster together is the better passage to ground
+// on. Normalization flag 32 maps the rank to rank/(rank+1), so it is strictly < 1
+// and can never outweigh even a single generic-term hit — density refines the order
+// within a coverage tier and never reorders across tiers.
+//
+// Length normalization is applied last, in SQL, on the same curve the previous
+// in-process implementation used (chars relative to the target chunk size — NOT
+// ts_rank's own flag 1, which normalizes by raw lexeme count and penalizes a long
+// passage several times harder than this corpus's chunking warrants).
+//
+// THE BIAS IT CORRECTS: a longer passage has more chances to contain more distinct
+// terms for no better reason than its size. Left uncorrected, chunking makes this
+// worse rather than better — a document split into one 1200-char chunk and one
+// 250-char chunk would systematically surface the long one even when the short one
+// is squarely on topic. Sub-linear rather than dividing by raw length, because
+// dividing over-corrects hard the other way: it makes a 30-character fragment
+// containing one term outrank a well-argued paragraph containing three, and the
+// fragment is the worse passage to ground an answer on even though it is denser.
+function scoreExpr(specific: string[], auxiliary: string[]): SQL<number> {
+  const coverage =
+    auxiliary.length === 0
+      ? sql<number>`(3 * ${hitsExpr(specific)})`
+      : sql<number>`(3 * ${hitsExpr(specific)} + ${hitsExpr(auxiliary)})`;
+  const density = sql<number>`ts_rank_cd(${documentChunks.searchVector}, ${anyOf([...specific, ...auxiliary])}, 32)`;
+  return sql<number>`((${coverage} + ${density}) / (1 + ln(1 + length(${documentChunks.content})::float8 / ${TARGET_CHUNK_CHARS})))`;
 }
 
 // How many of the query's specific terms a document must actually contain.
@@ -123,24 +177,6 @@ function scoreDocument(
 // domain-agnostic — it counts term overlap and knows nothing about any field.
 function requiredSpecificHits(specificCount: number): number {
   return Math.min(2, specificCount);
-}
-
-// Length normalization for chunk scores.
-//
-// THE BIAS IT CORRECTS: score counts DISTINCT matched terms, so it does not grow
-// with repetition — but it does grow with breadth, and a longer passage has more
-// chances to contain more distinct terms for no better reason than its size. Left
-// uncorrected, chunking makes this worse rather than better: a document split
-// into one 1200-char chunk and one 250-char chunk would systematically surface
-// the long one even when the short one is squarely on topic.
-//
-// Sub-linear (log) rather than dividing by raw length. Dividing by length
-// over-corrects hard in the other direction — it makes a 30-character fragment
-// containing one term outrank a well-argued paragraph containing three — and the
-// fragment is the worse passage to ground an answer on even though it is "denser".
-// The log damps the size advantage without inverting it.
-function normalizeByLength(score: number, chunkChars: number): number {
-  return score / (1 + Math.log(1 + chunkChars / TARGET_CHUNK_CHARS));
 }
 
 // Shared relevance-ranked retrieval, matched at CHUNK granularity.
@@ -171,15 +207,29 @@ async function retrieve(
 
   // A document must match a SPECIFIC topic term. If the query has none (only
   // generic learning words), there is no topic to be relevant to -> return [].
-  const specificArr = keywords.filter((w) => !GENERIC_TERMS.has(w));
+  const specificArr = ftsTerms(keywords.filter((w) => !GENERIC_TERMS.has(w)));
   if (specificArr.length === 0) return [];
-  const specific = new Set(specificArr);
+
+  // Generic query words plus profile context terms. Both rank, neither admits.
+  const auxiliary = ftsTerms([
+    ...keywords.filter((w) => GENERIC_TERMS.has(w)),
+    ...contextTerms,
+  ]).filter((t) => !specificArr.includes(t));
+
+  const score = scoreExpr(specificArr, auxiliary);
+  const specificHits = hitsExpr(specificArr);
 
   // Topic matching moves to the chunk. Ownership and linkability stay on the
   // document — they are properties of the source, not of a passage — which is why
   // this is a join rather than a lookup: the row that decides VISIBILITY and the
   // row that decides RELEVANCE are no longer the same row.
-  const topicMatch = or(...specificArr.map((w) => ilike(documentChunks.content, `%${w}%`)));
+  //
+  // This any-of match is logically implied by the specific-hit floor applied below
+  // (>= 1 hit is weaker than >= minHits), but it is kept as a separate predicate
+  // because it is the INDEXABLE one: GIN can answer `search_vector @@ tsquery`,
+  // and cannot answer a sum of per-term casts. It narrows the scan; the floor then
+  // decides admission.
+  const topicMatch = sql`${documentChunks.searchVector} @@ ${anyOf(specificArr)}`;
   // User scoping for RAG grounding: a query may retrieve GLOBAL curated docs plus
   // the requesting user's OWN documents (e.g. their uploaded resume), but never
   // another user's documents. With no ownerId, only global docs are visible.
@@ -190,47 +240,40 @@ async function retrieve(
     ? and(isNull(documents.userId), ilike(documents.sourceUrl, "http%"), topicMatch)
     : and(userScope, topicMatch);
 
-  // Candidate pool is larger than it was at document granularity: one document
-  // can now contribute many rows, so the same pool size would survey fewer
-  // distinct documents than before.
-  const candidates = await db
+  // ORDER BY is the point of this query, not a nicety. Ranking in SQL is what makes
+  // the pool the top-N MATCHES rather than the first N rows the scan happens to
+  // reach, which is the difference between a bounded pool and a random sample.
+  //
+  // The pool stays larger than `limit`: the floor and the per-document dedup below
+  // both discard rows, so the pool has to over-fetch to still yield `limit` distinct
+  // sources — and one document can contribute many chunks.
+  //
+  // The floor is applied to the RAW hit count, deliberately not to the score. It
+  // asks a yes/no question about topicality — "does this passage contain at least
+  // two of the query's specific terms?" — and length has no bearing on that.
+  // Applying it to the length-normalized score would let a short chunk fail the
+  // floor purely for being short, which is the opposite of what the floor is for.
+  //
+  // Absolute floor FIRST (is this passage about the subject at all?), then the
+  // relative cutoff below (is it among the better answers?). Order matters: the
+  // relative step is measured against the surviving best, so a corpus that has
+  // nothing on topic yields an empty result rather than a confidently ranked list
+  // of near-misses.
+  const minHits = requiredSpecificHits(specificArr.length);
+  const scored = await db
     .select({
       id: documents.id,
       type: documents.type,
       documentContent: documents.content,
       chunkContent: documentChunks.content,
       sourceUrl: documents.sourceUrl,
+      score: score.as("score"),
     })
     .from(documentChunks)
     .innerJoin(documents, eq(documentChunks.documentId, documents.id))
-    .where(where)
+    .where(and(where, sql`${specificHits} >= ${minHits}`))
+    .orderBy(sql`${score} DESC`)
     .limit(Math.max(limit * 12, 48));
-
-  // Absolute floor FIRST (is this passage about the subject at all?), then the
-  // relative cutoff below (is it among the better answers?). Order matters: the
-  // relative step is measured against the surviving best, so a corpus that has
-  // nothing on topic now yields an empty result rather than a confidently ranked
-  // list of near-misses.
-  //
-  // The floor is applied to the RAW hit count, deliberately not to the normalized
-  // score. The floor asks a yes/no question about topicality — "does this passage
-  // contain at least two of the query's specific terms?" — and length has no
-  // bearing on that. Normalizing it would let a short chunk fail the floor purely
-  // for being short, which is the opposite of what the floor is for.
-  const minHits = requiredSpecificHits(specificArr.length);
-  const scored = candidates
-    .map((r) => {
-      const { score, specificHits } = scoreDocument(
-        r.chunkContent,
-        r.sourceUrl,
-        keywords,
-        specific,
-        contextTerms
-      );
-      return { r, specificHits, score: normalizeByLength(score, r.chunkContent.length) };
-    })
-    .filter((x) => x.specificHits >= minHits)
-    .sort((a, b) => b.score - a.score);
 
   if (scored.length === 0) return [];
 
@@ -244,28 +287,28 @@ async function retrieve(
   // assumes it means: distinct sources. The array is already sorted, so the first
   // occurrence of each document id is its best passage.
   const bestPerDocument = new Map<string, (typeof scored)[number]>();
-  for (const entry of scored) {
-    if (!bestPerDocument.has(entry.r.id)) bestPerDocument.set(entry.r.id, entry);
+  for (const row of scored) {
+    if (!bestPerDocument.has(row.id)) bestPerDocument.set(row.id, row);
   }
   const deduped = [...bestPerDocument.values()];
 
   // Relative relevance cutoff: keep only documents scoring within 60% of the best
-  // match. This drops incidental single-term substring hits (e.g. a query for
-  // "data analyst" grazing "database" in an Azure doc, or "web development"
-  // grazing "web apps") while keeping genuinely on-topic results — which match
-  // more of the query's specific terms and therefore score higher.
-  const cutoff = deduped[0].score * 0.6;
+  // match. This drops incidental single-term hits (e.g. a query for "web
+  // development" grazing a passage that mentions "web apps" in passing) while
+  // keeping genuinely on-topic results — which match more of the query's specific
+  // terms, more densely, and therefore rank higher.
+  const cutoff = Number(deduped[0].score) * 0.6;
   return deduped
-    .filter((x) => x.score >= cutoff)
+    .filter((x) => Number(x.score) >= cutoff)
     .slice(0, limit)
     .map((x) => ({
       // The DOCUMENT's id, not the chunk's. Everything downstream — sources_used,
       // the trace, dedup by caller — identifies evidence by document, and handing
       // back a chunk id would silently break that correspondence.
-      id: x.r.id,
-      type: x.r.type,
-      content: returnPassage ? x.r.chunkContent : x.r.documentContent,
-      sourceUrl: x.r.sourceUrl,
+      id: x.id,
+      type: x.type,
+      content: returnPassage ? x.chunkContent : x.documentContent,
+      sourceUrl: x.sourceUrl,
     }));
 }
 
