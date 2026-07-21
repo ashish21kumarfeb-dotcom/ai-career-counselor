@@ -1,6 +1,7 @@
 // The agentic-chat graph, an explicit multi-agent (internal A2A) flow:
-// START -> intent -> planner -> Profile Agent -> Career Data Agent ->
-// Recommendation Agent -> Verification Agent -> memory -> evaluate -> log -> END.
+// START -> resolve query -> Profile Agent -> intent -> planner ->
+// Career Data Agent -> Recommendation Agent -> Verification Agent ->
+// memory -> evaluate -> log -> END.
 // Exposed via /api/agent-chat. Compiled once and reused.
 //
 // The four agents are standalone cores (src/lib/agent/agents/*) wrapped by thin
@@ -284,10 +285,13 @@ export function buildAgentGraph(overrides: GraphOverrides = {}) {
     // Terminal trace flush. Untraced by design — see nodes/persistTrace.ts.
     .addNode("persist_trace", persistTraceNode)
     .addEdge(START, "resolve_query")
-    .addEdge("resolve_query", "extract_intent")
+    // The Profile Agent runs BEFORE intent extraction and planning: who the user
+    // is is context FOR both, not a consequence of them. It is deterministic and
+    // depends on nothing but userId, so moving it earlier costs nothing.
+    .addEdge("resolve_query", "profile_agent")
+    .addEdge("profile_agent", "extract_intent")
     .addEdge("extract_intent", "planner")
-    .addEdge("planner", "profile_agent")
-    .addEdge("profile_agent", "career_data_agent")
+    .addEdge("planner", "career_data_agent")
     .addEdge("career_data_agent", "recommendation_agent")
     .addEdge("recommendation_agent", "verification_agent")
     // THE LOOP. Verification can send a draft back instead of merely correcting

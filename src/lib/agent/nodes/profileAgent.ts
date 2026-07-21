@@ -16,7 +16,6 @@ export async function profileAgentNode(
   const input: ProfileAgentInput = {
     userId: state.userId,
     query: state.query,
-    intent: state.intent,
   };
 
   const [profileAgent, profile, memory] = await Promise.all([

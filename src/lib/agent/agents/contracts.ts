@@ -79,10 +79,12 @@ export const profileAgentOutputSchema = z.object({
 export type UserContext = z.infer<typeof userContextSchema>;
 export type ProfileAgentOutput = z.infer<typeof profileAgentOutputSchema>;
 
+// No `intent` here: the Profile Agent runs BEFORE intent extraction (the user's
+// background is context for classification, not a product of it), so an intent
+// field could only ever be undefined at the call site.
 export interface ProfileAgentInput {
   userId: string;
   query: string;
-  intent: Intent;
 }
 
 // --- 2. Career Data Agent -----------------------------------------------------

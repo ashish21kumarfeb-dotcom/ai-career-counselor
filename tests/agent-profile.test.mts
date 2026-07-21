@@ -61,7 +61,7 @@ try {
   ]);
 
   console.log("\n== Profile Agent: populated user ==");
-  const out = await runProfileAgent({ userId: user.id, query: "How do I switch to analytics?", intent: "career_advice" });
+  const out = await runProfileAgent({ userId: user.id, query: "How do I switch to analytics?" });
 
   // userContext
   check("stage = job_switcher", out.userContext.stage === "job_switcher", String(out.userContext.stage));
@@ -91,7 +91,7 @@ try {
   check("output validates against contract", profileAgentOutputSchema.safeParse(out).success);
 
   console.log("\n== Profile Agent: unknown user (safe empty) ==");
-  const empty = await runProfileAgent({ userId: "00000000-0000-0000-0000-0000000000ff", query: "hi", intent: "other" });
+  const empty = await runProfileAgent({ userId: "00000000-0000-0000-0000-0000000000ff", query: "hi" });
   check("no profile -> summary says so", empty.profileSummary === "No profile on file for this user.", empty.profileSummary);
   check("no memory -> summary says so", empty.memorySummary === "No stored memory for this user.", empty.memorySummary);
   check("empty skills array", empty.userContext.skills.length === 0);

@@ -14,8 +14,10 @@ import {
 } from "../../../lib/ai/usage";
 
 // The Career Chat route. Runs the LangGraph workflow:
-// intent -> context (profile + memory + RAG) -> planner -> tools (DB-only agency
-// + resource search) -> generate -> verify -> evaluate -> memory update -> log.
+// resolve query -> Profile Agent (profile + memory) -> intent -> planner ->
+// Career Data Agent (RAG + DB-only agency/resource tools) -> Recommendation
+// Agent -> Verification Agent (with one regeneration retry) -> memory update ->
+// evaluate -> log -> persist trace.
 // Returns a DYNAMIC sectioned response — only the sections the planner deemed
 // relevant.
 export async function POST(request: Request) {

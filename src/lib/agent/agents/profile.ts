@@ -6,7 +6,7 @@
 // output is stable, cheap, and fully testable. It does NOT do RAG/tool retrieval;
 // that is the Career Data Agent's job (clean responsibility split).
 //
-// Input:  ProfileAgentInput  { userId, query, intent }
+// Input:  ProfileAgentInput  { userId, query }
 // Output: ProfileAgentOutput { profileSummary, memorySummary, userContext,
 //                              importantConstraints }
 // The output is validated against its contract before returning, so a malformed
