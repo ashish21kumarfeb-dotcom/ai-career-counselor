@@ -48,7 +48,11 @@
     "seed:documents": "tsx src/db/seed/documents.ts",
     "seed:agencies": "tsx src/db/seed/agencies.ts",
     "backfill:job-switcher": "tsx src/db/backfill/job-switcher-to-working-professional.ts",
-    "backfill:years-experience": "tsx src/db/backfill/years-experience-from-details.ts"
+    "backfill:years-experience": "tsx src/db/backfill/years-experience-from-details.ts",
+    "db:pgvector": "tsx scripts/enable-pgvector.mts",
+    "embeddings:backfill": "tsx scripts/backfill-embeddings.mts",
+    "probe:floor": "tsx scripts/probe-semantic-floor.mts",
+    "test:hybrid": "tsx tests/retrieval-hybrid.test.mts"
   },
   "dependencies": {
     "@langchain/core": "^1.2.2",

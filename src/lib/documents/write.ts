@@ -1,6 +1,7 @@
-import { eq, inArray, notInArray, sql } from "drizzle-orm";
+import { eq, inArray, isNull, notInArray, sql } from "drizzle-orm";
 import { db } from "../../db";
 import { documents, documentChunks } from "../../db/schema";
+import { embedDocuments } from "../ai/embeddings";
 import { chunkDocument } from "./chunk";
 import { redactPII } from "./redact";
 
@@ -58,16 +59,84 @@ export async function createDocument(input: NewDocument): Promise<string> {
 // Replace a document's chunks with a fresh segmentation of `content`.
 // Idempotent: running it twice produces the same rows, which is what lets the
 // backfill be re-run safely after a chunking-strategy change.
+//
+// Embeddings are computed here, on the same path that writes the text, so a
+// passage and its vector are always produced from the same segmentation. Doing it
+// anywhere else would let the two drift after a re-chunk — vectors describing
+// passages that no longer exist, which is undetectable at query time because a
+// stale vector still returns a plausible neighbour.
+//
+// The embedding call is best-effort by construction (see src/lib/ai/embeddings.ts):
+// a null vector writes a NULL column and the chunk stays lexically retrievable, so
+// an embeddings outage never blocks a document write or a resume upload.
 export async function writeChunks(documentId: string, content: string): Promise<number> {
   const chunks = chunkDocument(content);
 
   await db.delete(documentChunks).where(eq(documentChunks.documentId, documentId));
   if (chunks.length === 0) return 0;
 
+  const vectors = await embedDocuments(chunks);
   await db.insert(documentChunks).values(
-    chunks.map((text, index) => ({ documentId, chunkIndex: index, content: text }))
+    chunks.map((text, index) => ({
+      documentId,
+      chunkIndex: index,
+      content: text,
+      embedding: vectors[index] ?? null,
+    }))
   );
   return chunks.length;
+}
+
+// Chunks that carry text but no vector — i.e. chunks the semantic half of search
+// cannot see. Non-empty after any write that happened while embeddings were
+// unconfigured or the provider was failing; the backfill exists to drain it.
+export async function findUnembeddedChunkIds(): Promise<string[]> {
+  const rows = await db
+    .select({ id: documentChunks.id })
+    .from(documentChunks)
+    .where(isNull(documentChunks.embedding));
+  return rows.map((r) => r.id);
+}
+
+// Embed chunks in place. The target is explicit — "missing" (the resumable
+// default), "all" (a full re-embed, for a model or dimension change), or a
+// specific id list. Spelled out rather than inferred from an optional argument,
+// because "no ids given" reads equally well as either "missing" or "all", and a
+// --all run that quietly embedded only the NULL rows would report success while
+// leaving the corpus on two different models.
+//
+// Returns how many rows actually gained a vector — deliberately the count of
+// SUCCESSES, not of attempts, so a report cannot show "500 embedded" when the
+// provider was returning errors for all of them.
+export async function embedChunks(
+  target: string[] | "missing" | "all" = "missing"
+): Promise<number> {
+  const where =
+    target === "all"
+      ? undefined
+      : target === "missing"
+        ? isNull(documentChunks.embedding)
+        : inArray(documentChunks.id, target);
+
+  const rows = await db
+    .select({ id: documentChunks.id, content: documentChunks.content })
+    .from(documentChunks)
+    .where(where);
+  if (rows.length === 0) return 0;
+
+  const vectors = await embedDocuments(rows.map((r) => r.content));
+
+  let written = 0;
+  for (const [i, row] of rows.entries()) {
+    const vec = vectors[i];
+    if (!vec) continue;
+    await db
+      .update(documentChunks)
+      .set({ embedding: vec })
+      .where(eq(documentChunks.id, row.id));
+    written++;
+  }
+  return written;
 }
 
 // Documents that have no chunk rows — i.e. documents retrieval cannot see.

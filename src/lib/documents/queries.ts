@@ -1,10 +1,26 @@
-import { and, eq, ilike, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, eq, ilike, isNotNull, isNull, or, sql, type SQL } from "drizzle-orm";
 import { db } from "../../db";
 import { documents, documentChunks } from "../../db/schema";
+import { embedQuery } from "../ai/embeddings";
 import { TARGET_CHUNK_CHARS } from "./chunk";
 
-// Keyword retrieval for the RAG / resource slices. Backed by Postgres full-text
-// search (no embeddings yet — that is the next step), and RELEVANCE-AWARE: a
+// HYBRID retrieval for the RAG / resource slices: a lexical lane (Postgres
+// full-text search) and a semantic lane (pgvector nearest neighbours over Voyage
+// embeddings), fused by Reciprocal Rank Fusion.
+//
+// The two lanes exist because they fail differently, and each one's failures are
+// the other's strength. Lexical search cannot match "ML engineer" to "machine
+// learning" or "fresher" to "entry-level"; vector search cannot be trusted to
+// abstain, because a nearest-neighbour query always returns its closest guess even
+// when the corpus knows nothing about the subject. Running both and fusing ranks
+// keeps the recall of one and the discipline of the other.
+//
+// If embeddings are unconfigured or the provider fails, the semantic lane returns
+// nothing and this degrades to pure lexical retrieval — worse recall on paraphrased
+// questions, and nothing else. That is a deliberate property, not an accident: an
+// embeddings outage must never turn a search into an error.
+//
+// Both lanes are RELEVANCE-AWARE rather than merely matching. On the lexical side, a
 // document is only relevant if it matches a SPECIFIC (topic) term from the query,
 // not merely a generic learning word.
 //
@@ -179,29 +195,49 @@ function requiredSpecificHits(specificCount: number): number {
   return Math.min(2, specificCount);
 }
 
-// Shared relevance-ranked retrieval, matched at CHUNK granularity.
+// Visibility — who is allowed to see which documents. Separated from relevance
+// because the two are answered by different rows: ownership and linkability are
+// properties of the DOCUMENT, topicality is a property of the CHUNK. Both halves of
+// hybrid search apply exactly this predicate, which is what guarantees the semantic
+// lane cannot become a way around the cross-user boundary the lexical lane enforces.
 //
-// `globalHttpOnly` restricts to curated, linkable rows (global + real http URL)
-// for the resource/course tools.
-//
-// `returnPassage` decides what the caller gets back, and the two lanes genuinely
-// want different things:
-//   - RAG grounding wants the MATCHED PASSAGE. That is the whole point of
-//     chunking: inject the paragraph that answers the question, not the eight
-//     that surround it.
-//   - The resource/course lane wants the DOCUMENT's text, because its output is a
-//     link whose title is derived from the leading text (titleOf() reads up to
-//     the first colon). Handing it a passage from the middle of a document would
-//     render a link labelled with a mid-sentence fragment.
-// Both lanes still MATCH on chunks — recall improves either way.
-async function retrieve(
+// `globalHttpOnly` restricts to curated, linkable rows (global + real http URL) for
+// the resource/course tools.
+function visibilityWhere(globalHttpOnly: boolean, ownerId: string | undefined) {
+  if (globalHttpOnly) {
+    return and(isNull(documents.userId), ilike(documents.sourceUrl, "http%"));
+  }
+  // A query may retrieve GLOBAL curated docs plus the requesting user's OWN
+  // documents (e.g. their uploaded resume), but never another user's. With no
+  // ownerId, only global docs are visible.
+  return ownerId
+    ? or(isNull(documents.userId), eq(documents.userId, ownerId))
+    : isNull(documents.userId);
+}
+
+// A ranked candidate from either half of the search. `key` is the DOCUMENT id —
+// the unit both lanes agree on and the unit fusion must work in, since the same
+// document can surface through a different passage in each lane.
+type Candidate = {
+  key: string;
+  id: string;
+  type: string;
+  documentContent: string;
+  chunkContent: string;
+  sourceUrl: string | null;
+};
+
+// --- Lexical half --------------------------------------------------------------
+// Unchanged in behaviour from the full-text-search step: term coverage, the
+// specific-hit floor, per-document dedup, the relative cutoff. It is factored out
+// rather than rewritten precisely so that adding the semantic half cannot weaken
+// the abstention guarantee this lane is responsible for.
+async function lexicalCandidates(
   query: string,
   limit: number,
   contextTerms: string[],
-  globalHttpOnly: boolean,
-  ownerId: string | undefined,
-  returnPassage: boolean
-): Promise<RetrievedDocument[]> {
+  visibility: ReturnType<typeof visibilityWhere>
+): Promise<Candidate[]> {
   const keywords = tokenize(query);
   if (keywords.length === 0) return [];
 
@@ -230,15 +266,6 @@ async function retrieve(
   // and cannot answer a sum of per-term casts. It narrows the scan; the floor then
   // decides admission.
   const topicMatch = sql`${documentChunks.searchVector} @@ ${anyOf(specificArr)}`;
-  // User scoping for RAG grounding: a query may retrieve GLOBAL curated docs plus
-  // the requesting user's OWN documents (e.g. their uploaded resume), but never
-  // another user's documents. With no ownerId, only global docs are visible.
-  const userScope = ownerId
-    ? or(isNull(documents.userId), eq(documents.userId, ownerId))
-    : isNull(documents.userId);
-  const where = globalHttpOnly
-    ? and(isNull(documents.userId), ilike(documents.sourceUrl, "http%"), topicMatch)
-    : and(userScope, topicMatch);
 
   // ORDER BY is the point of this query, not a nicety. Ranking in SQL is what makes
   // the pool the top-N MATCHES rather than the first N rows the scan happens to
@@ -271,7 +298,7 @@ async function retrieve(
     })
     .from(documentChunks)
     .innerJoin(documents, eq(documentChunks.documentId, documents.id))
-    .where(and(where, sql`${specificHits} >= ${minHits}`))
+    .where(and(visibility, topicMatch, sql`${specificHits} >= ${minHits}`))
     .orderBy(sql`${score} DESC`)
     .limit(Math.max(limit * 12, 48));
 
@@ -301,15 +328,182 @@ async function retrieve(
   return deduped
     .filter((x) => Number(x.score) >= cutoff)
     .slice(0, limit)
-    .map((x) => ({
-      // The DOCUMENT's id, not the chunk's. Everything downstream — sources_used,
-      // the trace, dedup by caller — identifies evidence by document, and handing
-      // back a chunk id would silently break that correspondence.
-      id: x.id,
-      type: x.type,
-      content: returnPassage ? x.chunkContent : x.documentContent,
-      sourceUrl: x.sourceUrl,
-    }));
+    .map((x) => ({ key: x.id, ...x }));
+}
+
+// --- Semantic half -------------------------------------------------------------
+// Nearest neighbours of the query's embedding, under the SAME visibility predicate
+// as the lexical lane.
+//
+// THE ABSOLUTE SIMILARITY FLOOR IS THE LOAD-BEARING PART. A nearest-neighbour search
+// always succeeds: ask a corpus about a subject it has never heard of and it will
+// still hand back its closest guess, ranked with total confidence. That is precisely
+// the failure the lexical lane's specific-term floor was built to prevent — a query
+// about cyber security returning Azure pages — and adding an unfloored vector lane
+// would reintroduce it through the back door, in a form that is harder to see
+// because the results look semantically plausible.
+//
+// So similarity here is judged ABSOLUTELY, never relatively: a passage must be
+// genuinely close to the question, not merely the closest thing available. Below the
+// floor the correct answer is nothing at all.
+//
+// MEASURED, NOT CHOSEN. Cosine similarity has no absolute meaning independent of the
+// embedding model, so this value was read off the corpus with `npm run probe:floor`
+// (voyage-3.5-lite, 2026-07-21). Top similarity per query:
+//
+//   COVERED    "make my CV stand out"            0.5914
+//              "keep getting rejected"           0.5904
+//              "get into analytics"              0.5818
+//              "build websites"                  0.5633
+//              "worth changing fields at 30?"    0.3834   <- see below
+//   UNCOVERED  "commercial airline pilot"        0.4404
+//              "torn meniscus"                   0.3507
+//              "cyber security jobs"             0.3194
+//
+// 0.50 sits in the gap between the highest false positive (0.4404) and the lowest
+// clean true positive (0.5633).
+//
+// THE KNOWN COST, stated rather than hidden: "is it worth changing fields at 30?"
+// is genuinely covered by the career-switching document and scores 0.3834 — BELOW
+// the airline-pilot false positive. No threshold admits it without also admitting
+// the pilot query, so this floor loses it. That is the deliberate trade: an oblique
+// question going unanswered is recoverable (the user rephrases), while confidently
+// grounding career advice in a document about a different field is not.
+//
+// RE-DERIVE THIS when the embedding model changes, or when the corpus grows enough
+// that the covered/uncovered sets in the probe stop being representative. Do not
+// nudge it to make a single query work.
+const SEMANTIC_FLOOR = 0.5;
+
+// Reciprocal Rank Fusion constant. 60 is the value from the original RRF paper and
+// the de-facto default. What it controls is how sharply rank 1 dominates rank 2:
+// large K flattens the curve so the two lanes contribute more evenly, small K makes
+// each lane's top hit nearly decisive. It is deliberately not tuned here — with two
+// lanes and single-digit result counts, any K in the tens behaves the same, and a
+// hand-picked value would be fitted to the seed corpus rather than to retrieval.
+const RRF_K = 60;
+
+async function semanticCandidates(
+  query: string,
+  limit: number,
+  visibility: ReturnType<typeof visibilityWhere>
+): Promise<Candidate[]> {
+  const vector = await embedQuery(query);
+  // No key, provider down, or an empty query — the caller runs lexical-only.
+  if (!vector) return [];
+
+  // pgvector's text input form. Bound as a parameter and cast, never interpolated:
+  // the cast is what lets the planner use the HNSW index, and `<=>` must be the
+  // operator (cosine distance) because the index was built with vector_cosine_ops.
+  const literal = sql`${`[${vector.join(",")}]`}::vector`;
+  const distance = sql<number>`(${documentChunks.embedding} <=> ${literal})`;
+
+  const rows = await db
+    .select({
+      id: documents.id,
+      type: documents.type,
+      documentContent: documents.content,
+      chunkContent: documentChunks.content,
+      sourceUrl: documents.sourceUrl,
+      distance: distance.as("distance"),
+    })
+    .from(documentChunks)
+    .innerJoin(documents, eq(documentChunks.documentId, documents.id))
+    // `embedding IS NOT NULL` is not redundant: a chunk written while embeddings
+    // were unavailable has no vector, and pgvector sorts NULL distances last rather
+    // than excluding them — without this they would pad the pool and push real
+    // neighbours out of it.
+    .where(and(visibility, isNotNull(documentChunks.embedding)))
+    .orderBy(distance)
+    .limit(Math.max(limit * 6, 24));
+
+  // Cosine distance -> cosine similarity. Done here rather than in SQL so the floor
+  // is expressed in the units it is reasoned about in.
+  const above = rows.filter((r) => 1 - Number(r.distance) >= SEMANTIC_FLOOR);
+
+  // Same per-document dedup as the lexical lane, for the same reason: `limit` must
+  // mean distinct sources. Rows are already distance-ordered, so the first
+  // occurrence of a document is its closest passage.
+  const best = new Map<string, (typeof above)[number]>();
+  for (const row of above) {
+    if (!best.has(row.id)) best.set(row.id, row);
+  }
+  return [...best.values()].slice(0, limit).map((x) => ({ key: x.id, ...x }));
+}
+
+// --- Fusion --------------------------------------------------------------------
+// Reciprocal Rank Fusion: each lane contributes 1/(K + rank) for every document it
+// ranked, and the sums decide the final order.
+//
+// RANK, NOT SCORE, IS THE WHOLE POINT. The lexical lane produces term-coverage
+// numbers in the single digits and the semantic lane produces cosine similarities in
+// [0,1]; there is no principled way to add those, and every attempt to (normalize
+// them, weight them, min-max them) ends up fitting constants to whichever corpus was
+// on hand. Ranks are comparable by construction, so fusion needs no calibration and
+// stays correct as the corpus grows.
+//
+// A document found by BOTH lanes rises above one found by either alone — which is
+// the useful signal here: lexical and semantic agreement is real corroboration,
+// since the two lanes fail in unrelated ways.
+function fuse(lanes: Candidate[][], limit: number): Candidate[] {
+  const scores = new Map<string, number>();
+  const rows = new Map<string, Candidate>();
+
+  for (const lane of lanes) {
+    lane.forEach((row, i) => {
+      scores.set(row.key, (scores.get(row.key) ?? 0) + 1 / (RRF_K + i + 1));
+      // First lane to surface a document supplies the passage that will be
+      // returned. Lexical is passed first, so a document found by both is
+      // represented by its keyword-matching passage — the one that actually
+      // contains the user's words, which is the better evidence to quote.
+      if (!rows.has(row.key)) rows.set(row.key, row);
+    });
+  }
+
+  return [...scores.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([key]) => rows.get(key)!);
+}
+
+// Shared hybrid retrieval, matched at CHUNK granularity.
+//
+// `returnPassage` decides what the caller gets back, and the two lanes genuinely
+// want different things:
+//   - RAG grounding wants the MATCHED PASSAGE. That is the whole point of
+//     chunking: inject the paragraph that answers the question, not the eight
+//     that surround it.
+//   - The resource/course lane wants the DOCUMENT's text, because its output is a
+//     link whose title is derived from the leading text (titleOf() reads up to
+//     the first colon). Handing it a passage from the middle of a document would
+//     render a link labelled with a mid-sentence fragment.
+async function retrieve(
+  query: string,
+  limit: number,
+  contextTerms: string[],
+  globalHttpOnly: boolean,
+  ownerId: string | undefined,
+  returnPassage: boolean
+): Promise<RetrievedDocument[]> {
+  const visibility = visibilityWhere(globalHttpOnly, ownerId);
+
+  // Run both lanes concurrently: the semantic one spends most of its time waiting
+  // on the embedding provider, and serializing them would add that latency to every
+  // retrieval for no benefit — neither lane's input depends on the other's output.
+  const [lexical, semantic] = await Promise.all([
+    lexicalCandidates(query, limit, contextTerms, visibility),
+    semanticCandidates(query, limit, visibility),
+  ]);
+
+  return fuse([lexical, semantic], limit).map((x) => ({
+    // The DOCUMENT's id, not the chunk's. Everything downstream — sources_used,
+    // the trace, dedup by caller — identifies evidence by document, and handing
+    // back a chunk id would silently break that correspondence.
+    id: x.id,
+    type: x.type,
+    content: returnPassage ? x.chunkContent : x.documentContent,
+    sourceUrl: x.sourceUrl,
+  }));
 }
 
 // RAG grounding retrieval. Relevance-ranked and USER-SCOPED: returns global
