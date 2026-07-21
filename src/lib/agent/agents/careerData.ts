@@ -125,7 +125,18 @@ export async function runCareerDataAgent(
   const retrievalStart = performance.now();
   const [ragDocs, resourceResult, agencyResult, roadmapResult, marketResult, articleResult] =
     await Promise.all([
-      searchDocuments(query, userId).catch((e) => {
+      // contextTerms are passed HERE too, not only to searchResources below. They
+      // were omitted, so the parameter's `[]` default applied and RAG grounding —
+      // the lane whose passages the answer is actually built on — ranked without
+      // any knowledge of the user, while the resource-link lane ranked with it.
+      // Personalization was reaching the citations and not the evidence.
+      //
+      // Safe to add because contextTerms only ADD to an already-included doc's
+      // score (see scoreDocument); inclusion is decided by specificHits against
+      // the query alone. So this reorders results without widening them, and the
+      // abstention floor is untouched: a profile term cannot pull in a document
+      // the query did not already qualify.
+      searchDocuments(query, userId, 3, contextTerms).catch((e) => {
         console.error("Career Data Agent: searchDocuments failed:", e);
         return [] as RetrievedDocument[];
       }),

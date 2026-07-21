@@ -10,6 +10,7 @@ import "dotenv/config";
 import { ilike } from "drizzle-orm";
 import { db } from "../src/db/index";
 import { consultingAgencies, documents } from "../src/db/schema";
+import { createDocument } from "../src/lib/documents/write";
 import { runCareerDataAgent } from "../src/lib/agent/agents/careerData";
 import { careerDataAgentOutputSchema } from "../src/lib/agent/agents/contracts";
 import type { CareerDataAgentInput, UserContext } from "../src/lib/agent/agents/contracts";
@@ -78,14 +79,23 @@ await db.insert(consultingAgencies).values({
   lastVerified: null,
 });
 
-await db.insert(documents).values([
+// Seeded through createDocument, NOT a raw db.insert. Retrieval now matches on
+// document_chunks, so a document inserted directly has no chunk rows and is
+// invisible to searchDocuments/searchResources — the fixtures would be present in
+// the table and absent from every result, and the test would fail describing a
+// retrieval bug that does not exist. createDocument is also the only writer that
+// applies redaction + chunking together, so seeding through it keeps the fixtures
+// on the same path production documents take.
+for (const doc of [
   // resource-like (no course/cert terms) -> resources bucket
-  { userId: null, type: "career_data", sourceUrl: GUIDE_URL, content: "zzcdtopic roadmap learning path guide for engineers" },
+  { userId: null, type: "career_data" as const, sourceUrl: GUIDE_URL, content: "zzcdtopic roadmap learning path guide for engineers" },
   // course-like (course/coursera/certification) -> courses bucket
-  { userId: null, type: "career_data", sourceUrl: COURSE_URL, content: "zzcdtopic certification course on coursera" },
+  { userId: null, type: "career_data" as const, sourceUrl: COURSE_URL, content: "zzcdtopic certification course on coursera" },
   // non-http global knowledge -> retrievable for RAG, never a resource link
-  { userId: null, type: "career_data", sourceUrl: KNOWLEDGE_URL, content: "zzcdtopic knowledge: overview of zzcdtopic careers" },
-]);
+  { userId: null, type: "career_data" as const, sourceUrl: KNOWLEDGE_URL, content: "zzcdtopic knowledge: overview of zzcdtopic careers" },
+]) {
+  await createDocument(doc);
+}
 
 try {
   console.log("\n== resources + courses bucketing + RAG grounding ==");

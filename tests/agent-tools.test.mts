@@ -9,6 +9,7 @@ import { db } from "../src/db/index";
 import { users, consultingAgencies, documents } from "../src/db/schema";
 import { searchAgencies } from "../src/lib/agencies/queries";
 import { searchResources } from "../src/lib/documents/queries";
+import { createDocument } from "../src/lib/documents/write";
 
 let passed = 0;
 let failed = 0;
@@ -72,29 +73,33 @@ try {
   ]);
 
   // --- fixtures: resource documents ---
-  await db.insert(documents).values([
+  // Via createDocument so each one gets its document_chunks rows; retrieval
+  // matches on chunks, and a raw insert would be invisible to searchResources.
+  for (const doc of [
     // global + real http URL -> should be returned by searchResources
     {
       userId: null,
-      type: "career_data",
+      type: "career_data" as const,
       sourceUrl: `https://example.com/${TOKEN}/analyst-roadmap`,
       content: "test analyst roadmap resource covering sql and python",
     },
     // global but NON-http source_url (knowledge row) -> must be EXCLUDED
     {
       userId: null,
-      type: "career_data",
+      type: "career_data" as const,
       sourceUrl: `${TOKEN}/knowledge-not-a-link`,
       content: "test analyst roadmap knowledge without a link",
     },
     // user-owned (non-global) with real URL -> must be EXCLUDED (cross-user guard)
     {
       userId,
-      type: "career_data",
+      type: "career_data" as const,
       sourceUrl: `https://example.com/${TOKEN}/private-analyst`,
       content: "test analyst roadmap private user document",
     },
-  ]);
+  ]) {
+    await createDocument(doc);
+  }
 
   // ===== searchAgencies =====
   console.log("\n== searchAgencies ==");

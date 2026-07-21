@@ -34,6 +34,7 @@ import { logNode } from "../src/lib/agent/nodes/log";
 import { persistTraceNode } from "../src/lib/agent/nodes/persistTrace";
 import { getRunByRunId } from "../src/lib/agent/trace/queries";
 import { searchDocuments } from "../src/lib/documents/queries";
+import { createDocument } from "../src/lib/documents/write";
 import { isGrounded } from "../src/lib/ai/memory";
 import { hasReferentialMarker, isTopicShift } from "../src/lib/ai/resolveQuery";
 import type { ChatTurn } from "../src/lib/ai/resolveQuery";
@@ -80,16 +81,14 @@ const userId = u.id;
 
 // A user-owned document the RESOLVED query retrieves and the RAW one cannot.
 // Owned rather than global so the fixture is self-contained and cleaned up.
-const [doc] = await db
-  .insert(documents)
-  .values({
-    userId,
-    type: "career_data",
-    content:
-      "Cyber security engineer career note: a cyber security engineer secures networks, runs SIEM tooling and handles incident response.",
-  })
-  .returning({ id: documents.id });
-const docId = doc.id;
+// Seeded via createDocument so the fixture also gets its document_chunks rows —
+// retrieval matches on chunks, so a raw insert is invisible to searchDocuments.
+const docId = await createDocument({
+  userId,
+  type: "career_data",
+  content:
+    "Cyber security engineer career note: a cyber security engineer secures networks, runs SIEM tooling and handles incident response.",
+});
 
 function makeState(over: Partial<AgentStateType>): AgentStateType {
   return {
