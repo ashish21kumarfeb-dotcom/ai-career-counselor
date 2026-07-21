@@ -383,12 +383,60 @@ const SEMANTIC_FLOOR = 0.5;
 // hand-picked value would be fitted to the seed corpus rather than to retrieval.
 const RRF_K = 60;
 
+// How much profile context is allowed to move the semantic ordering.
+//
+// The lexical lane's rule for context terms is "both rank, neither admits": they
+// nudge the order and can never grant inclusion, because the floor is counted only
+// over specific terms. This is the same rule expressed in cosine units — admission
+// stays governed by similarity to the QUERY alone (SEMANTIC_FLOOR, below), and this
+// weight applies only to the ordering of passages already admitted.
+//
+// THE VALUE IS READ OFF THE DATA, not reasoned to. The blend ranks by
+// simQuery + W * simContext, so two passages swap exactly when their query gap is
+// smaller than W times their context gap. Context gaps are a property of the model
+// and the corpus, so the useful range for W is measured — `npm run probe:context`.
+//
+// What that probe reports on the current corpus:
+//
+//   query gap 0.0060  ->  swaps at W > 0.082   (W = 0.1 ACTS)
+//   query gap 0.0188  ->  swaps at W > 1.051   (W = 0.1 does nothing)
+//
+// So 0.1 sits in a wide, clean band: it resolves a 0.006 near-tie, and the nearest
+// pair it declines to touch would need a W more than ten times larger. Its effective
+// reach is ~0.007 in query-similarity — an order of magnitude below the 0.06 margin
+// the floor itself was probed to (0.4404 highest false positive, 0.50 floor). Context
+// breaks ties the query cannot resolve; it cannot override the query.
+//
+// RE-DERIVE THIS when the embedding model changes or the corpus grows substantially,
+// for the same reason SEMANTIC_FLOOR carries that instruction. Do not nudge it to
+// make a single query rank the way you expected.
+//
+// KNOWN AND STATED: on the seed corpus this weight is nearly inert in the way that
+// matters most — opposite profiles (data vs web) rank the admitted documents the SAME
+// way, because a document about choosing skills is more profile-adjacent than one
+// about switching fields for anyone with skills. The mechanism is correct and safe;
+// its personalization value arrives with a larger `documents` table, not before.
+const CONTEXT_WEIGHT = 0.1;
+
 async function semanticCandidates(
   query: string,
   limit: number,
+  contextTerms: string[],
   visibility: ReturnType<typeof visibilityWhere>
 ): Promise<Candidate[]> {
-  const vector = await embedQuery(query);
+  // One joined string rather than a vector per term: the terms describe a single
+  // person (their skills, goal, current role), and their centroid is what "this
+  // user's situation" means. Embedding each separately and averaging would cost N
+  // round trips to land in nearly the same place.
+  const contextText = contextTerms.join(", ");
+
+  // Concurrent, and the context call is skipped entirely when there is no profile
+  // context — an empty string short-circuits inside embedQuery, so a user without a
+  // profile pays nothing and gets exactly today's behaviour.
+  const [vector, contextVector] = await Promise.all([
+    embedQuery(query),
+    contextText ? embedQuery(contextText) : Promise.resolve(null),
+  ]);
   // No key, provider down, or an empty query — the caller runs lexical-only.
   if (!vector) return [];
 
@@ -398,6 +446,17 @@ async function semanticCandidates(
   const literal = sql`${`[${vector.join(",")}]`}::vector`;
   const distance = sql<number>`(${documentChunks.embedding} <=> ${literal})`;
 
+  // Context distance is SELECTed but never ORDERed by. That is deliberate: ORDER BY
+  // on the query distance alone is what the HNSW index can answer, and blending the
+  // two in SQL would turn every retrieval into a sequential scan. The blend happens
+  // in process, over the already-bounded pool, where it also stays legible.
+  //
+  // A null context vector selects a constant so the row shape does not change —
+  // the ranking below then treats every passage as equally context-neutral.
+  const contextDistance = contextVector
+    ? sql<number>`(${documentChunks.embedding} <=> ${sql`${`[${contextVector.join(",")}]`}::vector`})`
+    : sql<number>`1`;
+
   const rows = await db
     .select({
       id: documents.id,
@@ -406,6 +465,7 @@ async function semanticCandidates(
       chunkContent: documentChunks.content,
       sourceUrl: documents.sourceUrl,
       distance: distance.as("distance"),
+      contextDistance: contextDistance.as("context_distance"),
     })
     .from(documentChunks)
     .innerJoin(documents, eq(documentChunks.documentId, documents.id))
@@ -419,11 +479,25 @@ async function semanticCandidates(
 
   // Cosine distance -> cosine similarity. Done here rather than in SQL so the floor
   // is expressed in the units it is reasoned about in.
-  const above = rows.filter((r) => 1 - Number(r.distance) >= SEMANTIC_FLOOR);
+  //
+  // ADMISSION USES simQuery ONLY. Context is not part of this test and must never
+  // become part of it: a passage that is merely adjacent to the user's background,
+  // while saying nothing about what they asked, is exactly the confident-but-wrong
+  // grounding the floor exists to refuse.
+  const above = rows
+    .filter((r) => 1 - Number(r.distance) >= SEMANTIC_FLOOR)
+    .map((r) => ({
+      ...r,
+      rank:
+        1 -
+        Number(r.distance) +
+        CONTEXT_WEIGHT * (1 - Number(r.contextDistance)),
+    }))
+    .sort((a, b) => b.rank - a.rank);
 
   // Same per-document dedup as the lexical lane, for the same reason: `limit` must
-  // mean distinct sources. Rows are already distance-ordered, so the first
-  // occurrence of a document is its closest passage.
+  // mean distinct sources. Rows are ranked before this, so the first occurrence of
+  // a document is its best passage.
   const best = new Map<string, (typeof above)[number]>();
   for (const row of above) {
     if (!best.has(row.id)) best.set(row.id, row);
@@ -492,7 +566,7 @@ async function retrieve(
   // retrieval for no benefit — neither lane's input depends on the other's output.
   const [lexical, semantic] = await Promise.all([
     lexicalCandidates(query, limit, contextTerms, visibility),
-    semanticCandidates(query, limit, visibility),
+    semanticCandidates(query, limit, contextTerms, visibility),
   ]);
 
   return fuse([lexical, semantic], limit).map((x) => ({

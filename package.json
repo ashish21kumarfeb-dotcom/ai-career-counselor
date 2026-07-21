@@ -52,6 +52,7 @@
     "db:pgvector": "tsx scripts/enable-pgvector.mts",
     "embeddings:backfill": "tsx scripts/backfill-embeddings.mts",
     "probe:floor": "tsx scripts/probe-semantic-floor.mts",
+    "probe:context": "tsx scripts/probe-context-weight.mts",
     "test:hybrid": "tsx tests/retrieval-hybrid.test.mts"
   },
   "dependencies": {

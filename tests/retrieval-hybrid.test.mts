@@ -52,11 +52,27 @@ const has = (urls: string[], s: string) => urls.some((u) => u.toLowerCase().incl
 // below passes for the wrong reason.
 const PACE_MS = 25_000;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-let searches = 0;
 
-async function search(query: string, limit: number): Promise<string[]> {
-  if (searches++ > 0) await sleep(PACE_MS);
-  return urlsOf(await searchDocuments(query, undefined, limit));
+// Pacing is per EMBEDDING REQUEST, not per search. A context-aware search costs two
+// requests (the query, plus the centroid of the profile terms), so counting searches
+// would let the context cases below quietly outrun the free tier — and a rate-limited
+// context case degrades to lexical-only, which is precisely the failure mode this
+// suite exists to not report as green.
+//
+// Repeats are free: embedQuery memoizes on the exact text, so re-searching the same
+// query under a second profile costs one request, not two.
+const embedded = new Set<string>();
+async function pace(...texts: string[]) {
+  for (const text of texts) {
+    if (!text || embedded.has(text)) continue;
+    if (embedded.size > 0) await sleep(PACE_MS);
+    embedded.add(text);
+  }
+}
+
+async function search(query: string, limit: number, contextTerms: string[] = []): Promise<string[]> {
+  await pace(query, contextTerms.join(", "));
+  return urlsOf(await searchDocuments(query, undefined, limit, contextTerms));
 }
 
 // HOW THIS SUITE KNOWS THE SEMANTIC LANE ACTUALLY RAN.
@@ -147,6 +163,97 @@ console.log("\n== fusion keeps strong lexical matches at the top ==");
   const urls = await search(query, 3);
   console.log(`  -> ${JSON.stringify(urls)}`);
   check("an exact-keyword query still ranks its document first", has(urls.slice(0, 1), "data-analy"), JSON.stringify(urls));
+}
+
+// --- 4. Profile context RANKS -----------------------------------------------------
+// The contract copied from the lexical lane is "both rank, neither admits". This
+// block tests the RANK half: the same question asked by two people with opposite
+// backgrounds should surface the same evidence in a different order.
+//
+// The query is deliberately BROAD and profile-neutral — it names no field, so every
+// generic career document is a near-tie on the query alone and the profile is the
+// only thing left to break the tie. A query that named a field would rank itself and
+// prove nothing about context.
+//
+// ON SET STABILITY, stated because it is an expectation rather than a guarantee:
+// admission in the SEMANTIC lane provably ignores context (the floor is applied to
+// simQuery before the blend). The LEXICAL lane is weaker — context terms feed its
+// auxiliary score, and its cutoff is RELATIVE (60% of the best match), so a different
+// profile shifts the baseline and could in principle move membership. The assertion
+// below is therefore the honest one to make and the one worth knowing if it breaks;
+// it is not tuned to be green.
+//
+// THE BASELINE IS NO-CONTEXT, NOT THE OTHER PROFILE — and that distinction is the
+// whole reason this block is written the way it is. The obvious test ("two opposite
+// profiles must rank differently") was written first and FAILED, which looked like
+// the blend doing nothing. `npm run probe:context` showed the opposite: context DID
+// reorder, by exactly the amount predicted (a 0.0060 query gap, swappable at
+// W > 0.082), but BOTH profiles crossed their threshold and swapped the same pair, so
+// comparing them to each other cancelled the effect out. A document about choosing
+// skills is more profile-adjacent than one about switching fields for anyone with
+// skills, so on this corpus no two profiles disagree.
+//
+// Comparing against the UNPERSONALIZED ranking measures what the code actually
+// promises — that profile context moves the order — instead of a discrimination
+// property this corpus cannot exhibit.
+console.log("\n== profile context reorders near-ties without changing what is admitted ==");
+{
+  const query = "what should I learn next to move forward in my career?";
+  const DATA_PROFILE = ["SQL", "Excel", "data analysis", "dashboards", "business intelligence"];
+
+  // Same query text, so embedQuery serves it from cache — the baseline is free.
+  const noContext = await search(query, 5);
+  const asData = await search(query, 5, DATA_PROFILE);
+  console.log(`\n[no context]    -> ${JSON.stringify(noContext)}`);
+  console.log(`[data profile]  -> ${JSON.stringify(asData)}`);
+
+  const sameSet =
+    noContext.length === asData.length &&
+    [...noContext].sort().join("|") === [...asData].sort().join("|");
+
+  check(
+    "context leaves the admitted document set unchanged",
+    sameSet,
+    `none=${JSON.stringify([...noContext].sort())} data=${JSON.stringify([...asData].sort())}`
+  );
+  check(
+    "context changes the ranking of that set",
+    asData.join("|") !== noContext.join("|"),
+    `both ranked ${JSON.stringify(asData)} — context had no effect on order`
+  );
+}
+
+// --- 5. Profile context does NOT admit ---------------------------------------------
+// The ADMIT half of the same contract, and the one that actually protects the user.
+//
+// The pilot query is the sharpest instrument available: the floor probe recorded it
+// at cosine 0.4404, the HIGHEST false positive in this corpus and only 0.06 below
+// SEMANTIC_FLOOR. Paired with an aggressively on-corpus profile, it is the document
+// most likely to be dragged over the line if context ever leaked into admission.
+//
+// The failure this forbids is a specific and dangerous one: grounding career advice
+// in a document that matches WHO THE USER IS while saying nothing about WHAT THEY
+// ASKED. Being adjacent to someone's background is not evidence.
+//
+// The query text is reused verbatim from the abstention block above so embedQuery
+// serves it from cache — the profile centroid is the only new request here.
+console.log("\n== strong profile context still cannot admit an unrelated document ==");
+{
+  const query = "How do I become a commercial airline pilot?";
+  const STRONG_CAREER_PROFILE = [
+    "career change",
+    "job search",
+    "resume",
+    "interview preparation",
+    "professional growth",
+  ];
+
+  const urls = await search(query, 5, STRONG_CAREER_PROFILE);
+  check(
+    "an off-corpus query returns nothing even under maximally on-corpus context",
+    urls.length === 0,
+    JSON.stringify(urls)
+  );
 }
 
 console.log(`\n================  ${passed} passed, ${failed} failed  ================`);
