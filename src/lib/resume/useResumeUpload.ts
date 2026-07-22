@@ -22,6 +22,8 @@ export type UseResumeUpload = {
   selectFile: (file: File | null) => void;
   // Uploads `target` (or the currently selected file). Resolves true on success.
   upload: (target?: File) => Promise<boolean>;
+  // Submits pasted resume text (JSON path). Resolves true on success.
+  uploadText: (text: string) => Promise<boolean>;
   uploading: boolean;
   error: string | null;
   success: string | null;
@@ -64,16 +66,16 @@ export function useResumeUpload(
     setFileState(f);
   }
 
-  async function upload(target?: File): Promise<boolean> {
-    const f = target ?? file;
-    if (!f || uploading) return false;
+  // Shared POST + result handling for both the file and pasted-text paths. The
+  // caller supplies the request init; success/error state and `current` are
+  // updated the same way regardless of how the resume arrived.
+  async function submit(init: RequestInit): Promise<boolean> {
+    if (uploading) return false;
     setError(null);
     setSuccess(null);
     setUploading(true);
     try {
-      const fd = new FormData();
-      fd.append("file", f);
-      const res = await fetch("/api/resume", { method: "POST", body: fd });
+      const res = await fetch("/api/resume", { method: "POST", ...init });
       const data = await res.json().catch(() => ({}));
 
       if (res.status === 200 && data.ok) {
@@ -84,7 +86,7 @@ export function useResumeUpload(
           uploadedAt: new Date().toISOString(),
         });
         setSuccess(
-          `Uploaded ${data.filename} — ${data.chars.toLocaleString()} characters. Your career advice will now use it.`
+          `Saved ${data.filename} — ${data.chars.toLocaleString()} characters. Your career advice will now use it.`
         );
         setFileState(null);
         return true;
@@ -103,5 +105,21 @@ export function useResumeUpload(
     }
   }
 
-  return { current, loadingCurrent, file, selectFile, upload, uploading, error, success };
+  async function upload(target?: File): Promise<boolean> {
+    const f = target ?? file;
+    if (!f) return false;
+    const fd = new FormData();
+    fd.append("file", f);
+    return submit({ body: fd });
+  }
+
+  async function uploadText(text: string): Promise<boolean> {
+    if (!text.trim()) return false;
+    return submit({
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+  }
+
+  return { current, loadingCurrent, file, selectFile, upload, uploadText, uploading, error, success };
 }

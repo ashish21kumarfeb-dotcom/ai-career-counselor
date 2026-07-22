@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { useResumeUpload } from "../../lib/resume/useResumeUpload";
 
 // Resume upload UI for the dashboard. Loads the user's current resume (if any) on
@@ -17,13 +17,20 @@ function formatDate(iso: string): string {
 }
 
 export function ResumeUploader() {
-  const { current, loadingCurrent, file, selectFile, upload, uploading, error, success } =
+  const { current, loadingCurrent, file, selectFile, upload, uploadText, uploading, error, success } =
     useResumeUpload();
   const inputRef = useRef<HTMLInputElement>(null);
+  const [mode, setMode] = useState<"file" | "paste">("file");
+  const [pasted, setPasted] = useState("");
 
   async function handleUpload() {
     const ok = await upload();
     if (ok && inputRef.current) inputRef.current.value = "";
+  }
+
+  async function handlePaste() {
+    const ok = await uploadText(pasted);
+    if (ok) setPasted("");
   }
 
   return (
@@ -58,25 +65,55 @@ export function ResumeUploader() {
 
       {/* Uploader */}
       <div className="glass-card rounded-2xl p-5">
-        <h3 className="text-sm font-semibold text-heading">{current ? "Replace resume" : "Upload resume"}</h3>
-        <p className="mt-1 text-xs text-slate-400">PDF, DOCX, or TXT · up to 5 MB. It stays private to your account.</p>
+        <h3 className="text-sm font-semibold text-heading">{current ? "Replace resume" : "Add resume"}</h3>
+        <p className="mt-1 text-xs text-slate-400">
+          Upload a PDF, DOCX, or TXT file (up to 5 MB) or paste the text. It stays private to your account.
+        </p>
 
-        <label
-          htmlFor="resume-file"
-          className="mt-4 flex cursor-pointer flex-col items-center justify-center gap-1 rounded-2xl border border-dashed border-slate-900/15 bg-slate-900/[0.03] px-4 py-8 text-center transition hover:border-accent/40 hover:bg-slate-900/[0.06]"
-        >
-          <span aria-hidden className="text-2xl">⬆️</span>
-          <span className="text-sm font-medium text-slate-100">{file ? file.name : "Choose a file"}</span>
-          <span className="text-xs text-slate-400">{file ? `${(file.size / 1024).toFixed(0)} KB` : "PDF · DOCX · TXT"}</span>
-          <input
-            id="resume-file"
-            ref={inputRef}
-            type="file"
-            accept={ACCEPT}
-            className="sr-only"
-            onChange={(e) => selectFile(e.target.files?.[0] ?? null)}
+        {/* Mode toggle */}
+        <div className="mt-4 inline-flex rounded-xl border border-slate-900/10 bg-slate-900/[0.03] p-1 text-xs font-semibold">
+          <button
+            type="button"
+            onClick={() => setMode("file")}
+            className={`rounded-lg px-3 py-1.5 transition ${mode === "file" ? "bg-accent/15 text-mint-light" : "text-slate-400 hover:text-slate-200"}`}
+          >
+            Upload file
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("paste")}
+            className={`rounded-lg px-3 py-1.5 transition ${mode === "paste" ? "bg-accent/15 text-mint-light" : "text-slate-400 hover:text-slate-200"}`}
+          >
+            Paste text
+          </button>
+        </div>
+
+        {mode === "file" ? (
+          <label
+            htmlFor="resume-file"
+            className="mt-4 flex cursor-pointer flex-col items-center justify-center gap-1 rounded-2xl border border-dashed border-slate-900/15 bg-slate-900/[0.03] px-4 py-8 text-center transition hover:border-accent/40 hover:bg-slate-900/[0.06]"
+          >
+            <span aria-hidden className="text-2xl">⬆️</span>
+            <span className="text-sm font-medium text-slate-100">{file ? file.name : "Choose a file"}</span>
+            <span className="text-xs text-slate-400">{file ? `${(file.size / 1024).toFixed(0)} KB` : "PDF · DOCX · TXT"}</span>
+            <input
+              id="resume-file"
+              ref={inputRef}
+              type="file"
+              accept={ACCEPT}
+              className="sr-only"
+              onChange={(e) => selectFile(e.target.files?.[0] ?? null)}
+            />
+          </label>
+        ) : (
+          <textarea
+            value={pasted}
+            onChange={(e) => setPasted(e.target.value)}
+            rows={10}
+            placeholder="Paste your resume text here…"
+            className="mt-4 w-full resize-y rounded-2xl border border-slate-900/15 bg-slate-900/[0.03] p-3 text-xs leading-6 text-slate-200 placeholder:text-slate-500 focus:border-accent/40 focus:outline-none"
           />
-        </label>
+        )}
 
         {error ? (
           <p role="alert" className="mt-3 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">
@@ -87,14 +124,25 @@ export function ResumeUploader() {
           <p className="mt-3 rounded-lg bg-accent/10 px-3 py-2 text-sm text-mint-light">{success}</p>
         ) : null}
 
-        <button
-          type="button"
-          onClick={handleUpload}
-          disabled={!file || uploading}
-          className="btn-primary mt-4 flex h-11 w-full items-center justify-center rounded-xl px-4 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {uploading ? "Uploading…" : current ? "Replace resume" : "Upload resume"}
-        </button>
+        {mode === "file" ? (
+          <button
+            type="button"
+            onClick={handleUpload}
+            disabled={!file || uploading}
+            className="btn-primary mt-4 flex h-11 w-full items-center justify-center rounded-xl px-4 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {uploading ? "Uploading…" : current ? "Replace resume" : "Upload resume"}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={handlePaste}
+            disabled={pasted.trim().length < 30 || uploading}
+            className="btn-primary mt-4 flex h-11 w-full items-center justify-center rounded-xl px-4 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {uploading ? "Saving…" : current ? "Replace resume" : "Save resume"}
+          </button>
+        )}
       </div>
     </div>
   );

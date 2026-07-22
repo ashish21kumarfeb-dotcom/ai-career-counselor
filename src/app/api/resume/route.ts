@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "../../../lib/auth/session";
-import { parseResumeFile } from "../../../lib/resume/parse";
+import { parseResumeFile, normalizeResumeText } from "../../../lib/resume/parse";
 import { upsertResume, getResumeByUserId, resumeFilename } from "../../../lib/resume/queries";
 import { extractMemories } from "../../../lib/ai/memory";
 import { upsertMemory } from "../../../lib/memory/queries";
@@ -54,39 +54,72 @@ export async function POST(request: Request) {
     );
   }
 
-  let form: FormData;
-  try {
-    form = await request.formData();
-  } catch {
-    return NextResponse.json({ error: "Expected a file upload." }, { status: 400 });
-  }
-
-  const file = form.get("file");
-  if (!(file instanceof File)) {
-    return NextResponse.json({ error: "No file provided." }, { status: 400 });
-  }
-  if (file.size === 0) {
-    return NextResponse.json({ error: "The file is empty." }, { status: 400 });
-  }
-  if (file.size > MAX_BYTES) {
-    return NextResponse.json({ error: "File too large (max 5 MB)." }, { status: 400 });
-  }
-
-  const bytes = new Uint8Array(await file.arrayBuffer());
+  // Two ingestion paths share the rest of this handler: a multipart file upload
+  // (parsed to text) and a JSON { text } body (the user pasting resume text
+  // directly). Both converge on `text` + `filename`, then redact/store/extract
+  // identically. Branch on content-type.
   let text: string;
-  try {
-    text = await parseResumeFile(file.name, file.type, bytes);
-  } catch (error) {
-    console.error("Resume parse failed:", error);
-    const message = error instanceof Error ? error.message : "Could not read that file.";
-    return NextResponse.json({ error: message }, { status: 400 });
-  }
+  let filename: string;
+  const contentType = request.headers.get("content-type") ?? "";
 
-  if (text.trim().length < 30) {
-    return NextResponse.json(
-      { error: "Could not extract readable text — the file may be a scanned or image-only PDF." },
-      { status: 400 }
-    );
+  if (contentType.includes("application/json")) {
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: "Expected resume text." }, { status: 400 });
+    }
+    const pasted = typeof body === "object" && body !== null ? (body as { text?: unknown }).text : undefined;
+    if (typeof pasted !== "string") {
+      return NextResponse.json({ error: "No resume text provided." }, { status: 400 });
+    }
+    if (pasted.length > MAX_BYTES) {
+      return NextResponse.json({ error: "Resume text too large (max 5 MB)." }, { status: 400 });
+    }
+    text = normalizeResumeText(pasted);
+    filename = "Pasted resume";
+
+    if (text.trim().length < 30) {
+      return NextResponse.json(
+        { error: "That looks too short to be a resume — paste the full text." },
+        { status: 400 }
+      );
+    }
+  } else {
+    let form: FormData;
+    try {
+      form = await request.formData();
+    } catch {
+      return NextResponse.json({ error: "Expected a file upload." }, { status: 400 });
+    }
+
+    const file = form.get("file");
+    if (!(file instanceof File)) {
+      return NextResponse.json({ error: "No file provided." }, { status: 400 });
+    }
+    if (file.size === 0) {
+      return NextResponse.json({ error: "The file is empty." }, { status: 400 });
+    }
+    if (file.size > MAX_BYTES) {
+      return NextResponse.json({ error: "File too large (max 5 MB)." }, { status: 400 });
+    }
+
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    try {
+      text = await parseResumeFile(file.name, file.type, bytes);
+    } catch (error) {
+      console.error("Resume parse failed:", error);
+      const message = error instanceof Error ? error.message : "Could not read that file.";
+      return NextResponse.json({ error: message }, { status: 400 });
+    }
+    filename = file.name;
+
+    if (text.trim().length < 30) {
+      return NextResponse.json(
+        { error: "Could not extract readable text — the file may be a scanned or image-only PDF." },
+        { status: 400 }
+      );
+    }
   }
 
   // Redact once, up front, and use the redacted text for EVERYTHING downstream:
@@ -97,7 +130,7 @@ export async function POST(request: Request) {
   const { text: safeText } = redactPII(text);
 
   try {
-    await upsertResume(session.userId, safeText, file.name);
+    await upsertResume(session.userId, safeText, filename);
   } catch (error) {
     console.error("Resume store failed:", error);
     return NextResponse.json({ error: "Could not save your resume." }, { status: 500 });
@@ -123,7 +156,7 @@ export async function POST(request: Request) {
   await flushUsage(usageRows);
 
   return NextResponse.json(
-    { ok: true, filename: file.name, chars: safeText.length, preview: safeText.slice(0, 400) },
+    { ok: true, filename, chars: safeText.length, preview: safeText.slice(0, 400) },
     { status: 200 }
   );
 }

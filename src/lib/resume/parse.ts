@@ -16,6 +16,13 @@ function normalize(text: string): string {
     .trim();
 }
 
+// Normalize and length-cap resume text that arrives already as text (pasted by
+// the user) rather than extracted from a file, so both ingestion paths share the
+// same cleanup and MAX_CHARS ceiling before storage/prompting.
+export function normalizeResumeText(text: string): string {
+  return normalize(text).slice(0, MAX_CHARS);
+}
+
 function kindOf(filename: string, mime: string): "pdf" | "docx" | "txt" | null {
   const name = filename.toLowerCase();
   if (name.endsWith(".pdf") || mime === "application/pdf") return "pdf";
