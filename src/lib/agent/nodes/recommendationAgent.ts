@@ -65,6 +65,9 @@ export async function recommendationAgentNode(
     plan,
     profile: state.profileAgent ?? DEFAULT_PROFILE,
     careerData: state.careerData ?? DEFAULT_CAREER_DATA,
+    // Prior turns of this thread, so the answer stays consistent with the
+    // conversation — not just the single resolved question. Empty on the first turn.
+    history: state.history,
     feedback,
   };
   // Note: careerData is reused as-is. Regeneration re-writes the answer; it does

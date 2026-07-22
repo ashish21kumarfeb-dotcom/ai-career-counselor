@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useMemo, useEffect, useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ChatPanel } from "./ChatPanel";
 import { CareerNavigator } from "./CareerNavigator";
 import type { AgentResponse, Turn } from "./types";
@@ -14,6 +14,7 @@ import type { AgentResponse, Turn } from "./types";
 
 export function CareerWorkspace() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [turns, setTurns] = useState<Turn[]>([]);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -25,19 +26,78 @@ export function CareerWorkspace() {
   // server owns the history and reads it from this id.
   const [conversationId, setConversationId] = useState<string | null>(null);
 
+  // Resume a thread from the URL (`/chat?c=<id>`). The id lives in the URL so a
+  // reloaded — or shared — link restores the same conversation. Read once: the
+  // ref stops React Strict Mode's double-invoke (and any later render) from
+  // re-fetching or clobbering turns the user has since added.
+  const initialConvId = searchParams.get("c");
+  const rehydratedRef = useRef(false);
+
+  useEffect(() => {
+    if (rehydratedRef.current || !initialConvId) return;
+    rehydratedRef.current = true;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const res = await fetch(`/api/conversations/${initialConvId}/messages`);
+        if (res.status === 401) {
+          router.push("/signin");
+          return;
+        }
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+
+        const messages: Array<{ role: "user" | "assistant"; content: string }> =
+          Array.isArray(data.messages) ? data.messages : [];
+
+        // Empty means the id is stale, foreign, or unwritten (the route returns []
+        // for a thread that is not this user's — see the ownership note there).
+        // Drop the param and fall back to a fresh chat rather than resuming nothing.
+        if (messages.length === 0) {
+          router.replace("/chat");
+          return;
+        }
+
+        // Rehydrated assistant turns carry only stored text, not a full
+        // AgentResponse — the navigator cannot rebuild from them by design (see
+        // the Turn type). The transcript restores; the panel stays blank until the
+        // next live message.
+        setTurns(
+          messages.map((m) =>
+            m.role === "user"
+              ? { role: "user", content: m.content }
+              : { role: "assistant", content: m.content }
+          )
+        );
+        setConversationId(initialConvId);
+      } catch {
+        // Network failure: leave the empty state and keep the URL id so a manual
+        // reload can retry, rather than silently discarding the thread.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initialConvId, router]);
+
   // The most recent assistant response drives the navigator panel.
   const latest = useMemo<AgentResponse | null>(() => {
     for (let i = turns.length - 1; i >= 0; i--) {
       const t = turns[i];
-      if (t.role === "assistant") return t.data;
+      // Only LIVE assistant turns carry an envelope; rehydrated ones are text-only
+      // and must not drive the navigator.
+      if (t.role === "assistant" && "data" in t) return t.data;
     }
     return null;
   }, [turns]);
 
-  // Number of assistant responses so far — used to remount the navigator on each
-  // new response so its selected tab resets to Overview.
+  // Number of LIVE assistant responses so far — used to remount the navigator on
+  // each new response so its selected tab resets to Overview. Rehydrated text
+  // turns are excluded: they never render a navigator to reset.
   const responseCount = useMemo(
-    () => turns.reduce((n, t) => (t.role === "assistant" ? n + 1 : n), 0),
+    () => turns.reduce((n, t) => (t.role === "assistant" && "data" in t ? n + 1 : n), 0),
     [turns]
   );
 
@@ -69,7 +129,16 @@ export function CareerWorkspace() {
       const data = await res.json().catch(() => ({}));
 
       if (res.status === 200 && data.sections) {
-        if (typeof data.conversationId === "string") setConversationId(data.conversationId);
+        if (typeof data.conversationId === "string") {
+          setConversationId(data.conversationId);
+          // First message of a new thread: put its id in the URL so a reload or a
+          // shared link resumes it. `replace`, not `push`, so the id-less empty
+          // state is not left on the back stack. Subsequent messages already have
+          // the id and skip this.
+          if (!conversationId) {
+            router.replace(`/chat?c=${data.conversationId}`);
+          }
+        }
         setTurns((prev) => [...prev, { role: "assistant", data: data as AgentResponse }]);
       } else {
         setError(data.error ?? "Something went wrong. Please try again.");
@@ -90,6 +159,8 @@ export function CareerWorkspace() {
     setMessage("");
     setError(null);
     setExpanded(false);
+    // Clear `?c=` so a reload after "New chat" doesn't resume the old thread.
+    router.replace("/chat");
   }
 
   const hasResponse = latest !== null;

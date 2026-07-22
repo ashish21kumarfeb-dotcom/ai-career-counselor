@@ -48,9 +48,11 @@ export const AgentState = Annotation.Root({
   userId: Annotation<string>(),
   query: Annotation<string>(),
   // Recent turns of the active conversation, LOADED BY THE ROUTE FROM
-  // `conversation_messages` — no longer sent by the client. Used ONLY by the
-  // resolve_query node to rewrite a follow-up into a standalone question; empty on
-  // the first turn of a thread.
+  // `conversation_messages` — no longer sent by the client. Read by TWO nodes: the
+  // resolve_query node rewrites a follow-up into a standalone question against it,
+  // and the Recommendation Agent injects a budget-bounded slice of it (see
+  // conversations/dialogueContext.ts) so the answer stays consistent with the
+  // dialogue. Empty on the first turn of a thread.
   history: Annotation<ChatTurn[]>({ reducer: lastValue, default: () => [] }),
   // The thread this run belongs to, so persist_trace can attribute the run to it.
   // Empty for a direct graph invocation (tests) — nothing in the pipeline reads it.

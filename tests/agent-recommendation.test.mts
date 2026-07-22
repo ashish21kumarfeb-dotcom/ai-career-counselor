@@ -24,6 +24,12 @@ import {
   type TextSections,
 } from "../src/lib/agent/agents/recommendation";
 import {
+  buildDialogueContext,
+  DIALOGUE_CHAR_BUDGET,
+  MAX_DIALOGUE_TURN_CHARS,
+} from "../src/lib/conversations/dialogueContext";
+import type { ChatTurn } from "../src/lib/ai/resolveQuery";
+import {
   careerDataAgentOutputSchema,
   profileAgentOutputSchema,
 } from "../src/lib/agent/agents/contracts";
@@ -245,6 +251,49 @@ console.log("\n== A. Schema-mismatch repair (coerceTextSections) ==");
     ["ai_suggestion"]
   );
   check("non-text sibling ignored", sameSet(Object.keys(extra), ["ai_suggestion"]), JSON.stringify(Object.keys(extra)));
+}
+
+console.log("\n== A. Dialogue context: budget-bounded continuity block (6b) ==");
+{
+  // Empty / absent history -> "" so the caller can omit the block and its framing.
+  check("empty history -> empty string", buildDialogueContext([]) === "");
+
+  const short: ChatTurn[] = [
+    { role: "user", content: "I want to switch to analytics." },
+    { role: "assistant", content: "Analytics is a strong fit; start with SQL." },
+    { role: "user", content: "And the roadmap for that?" },
+  ];
+  const block = buildDialogueContext(short);
+  check("small history fits without omission note", !block.includes("omitted"), block);
+  check("role labels rendered", block.includes("User:") && block.includes("Assistant:"), block);
+  check(
+    "chronological order preserved (oldest first)",
+    block.indexOf("switch to analytics") < block.indexOf("roadmap for that"),
+    block
+  );
+
+  // Budget enforcement: many long turns -> total stays within budget, oldest dropped,
+  // truncation is announced, and the NEWEST turn survives.
+  const long: ChatTurn[] = Array.from({ length: 20 }, (_, i) => ({
+    role: (i % 2 === 0 ? "user" : "assistant") as ChatTurn["role"],
+    content: `Turn ${i} ` + "x".repeat(300),
+  }));
+  const bounded = buildDialogueContext(long);
+  check("bounded within char budget", bounded.length <= DIALOGUE_CHAR_BUDGET + 80, String(bounded.length));
+  check("truncation announced when turns dropped", bounded.includes("omitted"), bounded.slice(0, 60));
+  check("newest turn kept under budget pressure", bounded.includes("Turn 19"), bounded);
+  check("oldest turn dropped under budget pressure", !bounded.includes("Turn 0 "), bounded.slice(0, 120));
+
+  // Never drop the newest turn to nothing, even with an absurdly small budget.
+  const tiny = buildDialogueContext(short, 5);
+  check("newest turn always kept (tiny budget)", tiny.includes("roadmap for that"), tiny);
+  check("tiny budget still announces omission", tiny.includes("omitted"), tiny);
+
+  // Per-turn clip caps a single huge turn (ellipsis appended).
+  const huge: ChatTurn[] = [{ role: "user", content: "y".repeat(MAX_DIALOGUE_TURN_CHARS + 500) }];
+  const clipped = buildDialogueContext(huge);
+  check("over-long turn clipped to per-turn cap", clipped.length <= MAX_DIALOGUE_TURN_CHARS + "User: ".length + 2, String(clipped.length));
+  check("clip marked with ellipsis", clipped.includes("…"), clipped.slice(-10));
 }
 
 console.log("\n== A. Contract validation (I/O DTOs) ==");

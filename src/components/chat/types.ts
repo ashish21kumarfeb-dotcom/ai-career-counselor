@@ -74,6 +74,15 @@ export type AgentResponse = {
   evaluation?: Evaluation | null;
 };
 
+// A turn as held by the workspace. Assistant turns come in two shapes:
+//   - `data`: a LIVE response this session, carrying the full AgentResponse that
+//     also drives the Career Navigator panel.
+//   - `content`: a REHYDRATED turn read back from conversation_messages after a
+//     reload, which stores only the flattened summary text (see
+//     src/lib/conversations/summarize.ts) — no envelope to rebuild the panel from.
+// A restored thread therefore reads as a clean transcript; the navigator stays
+// blank until the user sends the next live message.
 export type Turn =
   | { role: "user"; content: string }
-  | { role: "assistant"; data: AgentResponse };
+  | { role: "assistant"; data: AgentResponse }
+  | { role: "assistant"; content: string };

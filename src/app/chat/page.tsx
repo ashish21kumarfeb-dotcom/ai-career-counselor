@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { getSession } from "../../lib/auth/session";
 import { getProfileByUserId } from "../../lib/profile/queries";
@@ -24,7 +25,11 @@ export default async function ChatPage() {
     <div className="flex min-h-dvh flex-1">
       <SideNav email={session.email} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <CareerWorkspace />
+        {/* CareerWorkspace reads `?c=` via useSearchParams, which requires a
+            Suspense boundary or the production build fails the CSR-bailout check. */}
+        <Suspense fallback={null}>
+          <CareerWorkspace />
+        </Suspense>
       </div>
     </div>
   );

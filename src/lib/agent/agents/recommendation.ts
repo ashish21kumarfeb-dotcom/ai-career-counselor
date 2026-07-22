@@ -18,6 +18,7 @@ import { z } from "zod";
 import { CHAT_MODEL } from "../../ai/client";
 import { createCompletion } from "../../ai/usage";
 import { BASE_PROMPT } from "../../ai/prompt";
+import { buildDialogueContext } from "../../conversations/dialogueContext";
 import { sourced } from "../sections";
 import { factualDataGate } from "../schema";
 import type { AgentPlan, ResponseSections, SectionName } from "../schema";
@@ -371,6 +372,16 @@ async function generateText(
 ): Promise<TextSections> {
   const keys = wantText.join(", ");
   const posture = evidencePosture(input.query, input.careerData);
+  // The recent dialogue, budget-bounded. Fed for CONTINUITY only — it lets a
+  // follow-up answer stay consistent with what was already asked and said. It is
+  // NOT a grounding source: prior assistant turns are this model's own earlier
+  // prose, and re-citing a figure from them without re-grounding it would launder an
+  // unverified claim into a verified-looking one, so the grounding rules below still
+  // govern every figure, link, and agency.
+  const dialogue = buildDialogueContext(input.history ?? []);
+  const dialogueDirective = dialogue
+    ? `\nCONVERSATION CONTINUITY: a RECENT CONVERSATION block is provided below. Use it to stay consistent with what the user has already asked and been told (their situation, constraints, and the thread of the discussion). It is context, NOT a source of verified facts — do not treat any figure, link, or agency mentioned in it as grounded; the grounding rules above still apply to every claim.`
+    : "";
   const roadmapRule = resourcesAvailable
     ? "Base the roadmap on the retrieved knowledge and available resource links."
     : "No verified roadmap resource is available, so give a general, sensible roadmap framed as suggested guidance (do not present it as verified external data).";
@@ -400,10 +411,10 @@ Output rules (strict):
 - Do NOT wrap the object in another object (no "response", "result", or "output" envelope).
 - Every value must be exactly the type shown above: a string stays a string, an array stays a flat array of strings. Never put an object where a string or a string array is required.
 Grounding rules: use ONLY the provided context for facts. Do NOT invent agencies, courses, links, companies, salaries, or statistics. You MAY cite a figure, trend, or source ONLY if it appears in the provided context (including the EXTERNAL SOURCED REFERENCES), and you must attribute it to that source. Do NOT reference any agency, link, or source not listed in the context. Separate opinion from fact; never guarantee jobs, interviews, or salaries.
-${evidenceDirective(posture)}`;
+${evidenceDirective(posture)}${dialogueDirective}`;
 
   const user = `User query: ${JSON.stringify(input.query)}
-
+${dialogue ? `\nRECENT CONVERSATION (oldest first; the current query is above, not repeated here):\n${dialogue}\n` : ""}
 CONTEXT:
 ${buildContext(input.profile, input.careerData)}
 ${renderFeedback(input.feedback)}

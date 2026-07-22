@@ -8,6 +8,7 @@
 // node wrappers wired in later steps consume them. No runtime behavior changes.
 import { z } from "zod";
 import type { Intent } from "../../ai/intent";
+import type { ChatTurn } from "../../ai/resolveQuery";
 import type { AgentPlan, ResponseSections, SectionName } from "../schema";
 
 // --- Shared item shapes (structurally identical to schema.ts's ResourceItem /
@@ -177,6 +178,10 @@ export interface RecommendationAgentInput {
   plan: AgentPlan;
   profile: ProfileAgentOutput;
   careerData: CareerDataAgentOutput;
+  // The recent dialogue of the active thread (prior turns only — the current message
+  // is `query`), read from the conversation window by the route. Fed to the answer
+  // model for continuity, budget-bounded at render time. Empty on the first turn.
+  history?: ChatTurn[];
   // Present only on a regeneration pass. Absent on the first attempt.
   feedback?: VerificationFeedback;
 }

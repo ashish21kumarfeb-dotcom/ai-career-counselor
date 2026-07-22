@@ -82,7 +82,8 @@ export function ChatPanel({ turns, message, onMessageChange, onSend, loading, er
                   {t.content}
                 </div>
               </div>
-            ) : (
+            ) : "data" in t ? (
+              // Live assistant turn: the full response also drives the navigator.
               <div key={i} className="flex justify-start">
                 <div className="glass-card max-w-[90%] rounded-2xl px-4 py-3">
                   {t.data.sections.ai_suggestion ? (
@@ -91,6 +92,14 @@ export function ChatPanel({ turns, message, onMessageChange, onSend, loading, er
                     <p className="text-sm leading-6 text-slate-200">Here&apos;s what I found for you.</p>
                   )}
                   <p className="mt-2 text-xs font-medium text-accent">Career Navigator updated →</p>
+                </div>
+              </div>
+            ) : (
+              // Rehydrated assistant turn: only the stored summary text survives a
+              // reload, so no navigator pointer — there is no envelope behind it.
+              <div key={i} className="flex justify-start">
+                <div className="glass-card max-w-[90%] rounded-2xl px-4 py-3">
+                  <p className="text-sm leading-6 text-slate-200">{summarize(t.content)}</p>
                 </div>
               </div>
             )
