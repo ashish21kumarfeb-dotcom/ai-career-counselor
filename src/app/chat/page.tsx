@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { getSession } from "../../lib/auth/session";
 import { getProfileByUserId } from "../../lib/profile/queries";
-import { SideNav } from "../../components/shell/SideNav";
+import { SideNav } from "../../components/sidenavbar/SideNav";
 import { CareerWorkspace } from "../../components/chat/CareerWorkspace";
 
 // Career Chat — the single chat surface, in a split "career workspace" shell.

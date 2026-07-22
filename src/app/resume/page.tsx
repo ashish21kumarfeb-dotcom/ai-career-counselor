@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "../../lib/auth/session";
 import { getProfileByUserId } from "../../lib/profile/queries";
-import { SideNav } from "../../components/shell/SideNav";
+import { SideNav } from "../../components/sidenavbar/SideNav";
 import { ResumeUploader } from "../../components/resume/ResumeUploader";
 
 // Resume & documents page. Upload a resume (PDF/DOCX/TXT) — it is parsed, stored
