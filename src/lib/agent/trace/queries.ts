@@ -17,6 +17,7 @@ export type SaveRunInput = {
   trace: TraceEvent[];
   finalStatus: FinalStatus;
   recommendationId?: string;
+  conversationId?: string;
 };
 
 // Insert one run row. `run_id` is unique, so a retry of the same run is a
@@ -34,6 +35,7 @@ export async function saveRun(input: SaveRunInput) {
       trace: input.trace,
       finalStatus: input.finalStatus,
       recommendationId: input.recommendationId,
+      conversationId: input.conversationId,
     })
     .onConflictDoNothing({ target: agentRuns.runId })
     .returning({ id: agentRuns.id });

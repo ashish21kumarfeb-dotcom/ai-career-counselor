@@ -160,6 +160,38 @@ export function isTopicShift(query: string, history: ChatTurn[]): boolean {
   return novel.length >= MIN_NOVEL_TOKENS && novel.length / q.size >= NOVELTY_THRESHOLD;
 }
 
+// --- Elliptical corrections ----------------------------------------------------
+// A message can depend on the conversation without pointing at it. "I mean devops
+// and cloud." names its own subject and carries no pronoun, no "that", no "the
+// role" — so hasReferentialMarker is false — yet it is meaningless alone: it
+// RESTATES the subject of a question the user already asked, expecting the earlier
+// question to be re-applied to it.
+//
+// Left unrecognized, such a message is longer than the short-fragment shortcut
+// below and so skips resolution entirely. The consequence is not a slightly worse
+// rewrite, it is a different run: `query` reaches the gates as "I mean devops and
+// cloud", which matches neither RESOURCE_TERMS nor any external-tool gate in
+// agent/schema.ts, so the resources/courses/skill_focus sections are gated out and
+// no external search runs. The user's correction lands on the one path with the
+// least context available to answer it.
+//
+// DELIBERATELY SEPARATE from REFERENTIAL_PATTERNS. That list is not only the
+// follow-up trigger: it is also the early-return in isTopicShift and in
+// graftsHistoryTopic, where a marker means "this is a follow-up by construction,
+// stop guarding". Corrections must NOT get that exemption — "Actually, is there any
+// career in fine arts?" is a correction in form and a topic change in substance,
+// and it needs both guards live. So these patterns only ever answer the narrower
+// question isLikelyFollowUp asks: is this worth sending to the resolver at all?
+// The resolver's own topic_shift rule and the graft check then decide the outcome.
+const CORRECTION_PATTERNS: RegExp[] = [
+  // Explicit self-correction openers.
+  /^\s*(i mean|i meant)\b/i,
+  /^\s*(actually|instead|rather)\b/i,
+  // Additive tail: "devops also", "cloud too", "kubernetes as well" — a bare
+  // subject appended to whatever was being asked.
+  /\b(also|too|as well)\s*[.?!]?$/i,
+];
+
 // A cheap, conservative heuristic: does this message look like a follow-up that
 // needs the conversation to be understood? Very short fragments are treated as
 // follow-ups too (likely elliptical). When in doubt we return true so the LLM
@@ -172,6 +204,9 @@ export function isLikelyFollowUp(query: string): boolean {
   // returns them unchanged if they turn out to be standalone. Correctness over the
   // latency saving: a short genuinely-standalone question costs one no-op call.
   if (q.split(/\s+/).length <= 4) return true;
+  // A correction long enough to clear the fragment shortcut but still dependent on
+  // the conversation for its verb (see CORRECTION_PATTERNS above).
+  if (CORRECTION_PATTERNS.some((re) => re.test(q))) return true;
   return hasReferentialMarker(q);
 }
 

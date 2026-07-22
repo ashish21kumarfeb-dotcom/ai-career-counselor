@@ -47,10 +47,14 @@ export const AgentState = Annotation.Root({
   // Inputs (provided at invoke).
   userId: Annotation<string>(),
   query: Annotation<string>(),
-  // Recent turns of the active conversation, sent by the client. Used ONLY by the
+  // Recent turns of the active conversation, LOADED BY THE ROUTE FROM
+  // `conversation_messages` — no longer sent by the client. Used ONLY by the
   // resolve_query node to rewrite a follow-up into a standalone question; empty on
-  // the first turn (or for callers that send no history).
+  // the first turn of a thread.
   history: Annotation<ChatTurn[]>({ reducer: lastValue, default: () => [] }),
+  // The thread this run belongs to, so persist_trace can attribute the run to it.
+  // Empty for a direct graph invocation (tests) — nothing in the pipeline reads it.
+  conversationId: Annotation<string>({ reducer: lastValue, default: () => "" }),
   // The raw user message as typed, preserved after resolve_query overwrites `query`
   // with the resolved standalone form. Empty until that node runs.
   //

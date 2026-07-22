@@ -32,6 +32,7 @@
     "test:parse": "tsx tests/resume-parse.test.mts",
     "test:security": "tsx tests/security-boundary.test.mts",
     "test:ratelimit": "tsx tests/rate-limit.test.mts",
+    "test:conversations": "tsx tests/conversation-history.test.mts",
     "test:usage": "tsx tests/usage-accounting.test.mts",
     "test:membounds": "tsx tests/memory-bounds.test.mts",
     "test:docwrite": "tsx tests/document-write.test.mts",

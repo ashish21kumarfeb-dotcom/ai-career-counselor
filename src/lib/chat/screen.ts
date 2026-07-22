@@ -97,11 +97,19 @@ function scan(text: string): string | null {
   return null;
 }
 
-// Screens the user's message AND the client-supplied history. History matters:
-// it is sent by the client, not read from the server's own store, and
-// resolve_query feeds it to an LLM to rewrite follow-ups. A payload placed in a
-// fabricated prior turn would otherwise reach a model without ever appearing in
-// the field being checked.
+// Screens the user's message, plus any turns a caller supplies alongside it.
+//
+// THE `history` PARAMETER NO LONGER HAS A CALLER. /api/agent-chat used to pass the
+// client's turn array here, because history was sent with the request and
+// resolve_query feeds it to an LLM — a payload planted in a fabricated prior turn
+// would otherwise reach a model without appearing in the field being checked. The
+// route now loads history from `conversation_messages`, so each turn is screened
+// once at the point it is written and the fabricated-turn path is gone.
+//
+// The parameter stays because the property it enforces is about ingestion, not
+// about that one route: any future path that accepts turns it did not write
+// (a conversation import, a second client) needs this check, and it is the kind
+// of check that is only ever added back after it was needed.
 export function screenChatInput(
   message: string,
   history: Array<{ role: string; content: string }> = []

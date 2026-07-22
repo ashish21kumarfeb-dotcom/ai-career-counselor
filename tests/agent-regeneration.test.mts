@@ -35,7 +35,7 @@ function makeState(over: Partial<AgentStateType>): AgentStateType {
   return {
     userId: "00000000-0000-0000-0000-000000000000",
     query: "how do I become a data analyst?",
-    history: [], originalQuery: "",
+    history: [], conversationId: "", originalQuery: "",
     runId: "", trace: [], recommendationId: undefined, memoryUpdate: undefined, persist: false,
     intent: "career_advice", profile: undefined, memory: [], ragDocs: [],
     plan: { sections: ["ai_suggestion", "roadmap"], reasoning: "test" },

@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { ChatPanel } from "./ChatPanel";
 import { CareerNavigator } from "./CareerNavigator";
 import type { AgentResponse, Turn } from "./types";
-import { buildHistory } from "./history";
 
 // The Career Chat workspace. Starts as a simple centered chat (intro + chips +
 // input). After the first successful agent response it transitions into a split
@@ -20,6 +19,11 @@ export function CareerWorkspace() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
+  // The server-side thread. Null until the first response comes back with an id;
+  // sending it on every subsequent message is what makes those messages part of
+  // the same conversation. The client no longer sends the turns themselves — the
+  // server owns the history and reads it from this id.
+  const [conversationId, setConversationId] = useState<string | null>(null);
 
   // The most recent assistant response drives the navigator panel.
   const latest = useMemo<AgentResponse | null>(() => {
@@ -43,9 +47,6 @@ export function CareerWorkspace() {
 
     setError(null);
     setMessage("");
-    // Snapshot the PRIOR turns (before appending this message) as the active
-    // conversation context, so the server can resolve follow-up references.
-    const history = buildHistory(turns);
     setTurns((prev) => [...prev, { role: "user", content: trimmed }]);
     setLoading(true);
 
@@ -53,7 +54,11 @@ export function CareerWorkspace() {
       const res = await fetch("/api/agent-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: trimmed, history }),
+        // Omitted on the first message: the server creates the thread and returns
+        // its id below.
+        body: JSON.stringify(
+          conversationId ? { message: trimmed, conversationId } : { message: trimmed }
+        ),
       });
 
       if (res.status === 401) {
@@ -64,6 +69,7 @@ export function CareerWorkspace() {
       const data = await res.json().catch(() => ({}));
 
       if (res.status === 200 && data.sections) {
+        if (typeof data.conversationId === "string") setConversationId(data.conversationId);
         setTurns((prev) => [...prev, { role: "assistant", data: data as AgentResponse }]);
       } else {
         setError(data.error ?? "Something went wrong. Please try again.");
@@ -78,6 +84,9 @@ export function CareerWorkspace() {
   // New chat: clear the conversation and navigator, return to the initial state.
   function startNewChat() {
     setTurns([]);
+    // Dropping the id is what makes the next message start a NEW thread rather
+    // than continue the previous one — the old thread stays in the database.
+    setConversationId(null);
     setMessage("");
     setError(null);
     setExpanded(false);

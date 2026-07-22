@@ -49,6 +49,7 @@ function baseState(over: Partial<AgentStateType>): AgentStateType {
     userId: "",
     query: "",
     history: [],
+    conversationId: "",
     originalQuery: "",
     runId: "",
     trace: [],

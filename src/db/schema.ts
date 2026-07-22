@@ -46,6 +46,12 @@ export const documentType = pgEnum("document_type", [
   "agency_record",
 ]);
 
+// Who authored a stored conversation turn. Only the two roles the chat surface
+// actually produces — there is no stored "system" turn, because the system prompt
+// is assembled per request from the profile, memory and retrieval context and is
+// never part of the user's conversation.
+export const messageRole = pgEnum("message_role", ["user", "assistant"]);
+
 export const verificationStatus = pgEnum("verification_status", [
   "pending",
   "verified",
@@ -134,6 +140,70 @@ export const memory = pgTable(
   (t) => [unique("memory_user_key_unique").on(t.userId, t.memoryKey)]
 );
 
+// A chat thread: the durable identity of a conversation.
+//
+// Until now "the conversation" existed only in React state and in the request
+// body — the client held the turns, flattened them, and sent them back with every
+// message. That made history three things it should not be: LOST on refresh,
+// UNTRUSTED (the server had to screen turns it supposedly authored itself), and
+// UNAUDITABLE (`ai_recommendations` logged each turn but nothing tied two turns
+// together, so no thread could be reconstructed after the fact).
+//
+// `title` is a display label derived from the opening message, nullable because a
+// conversation is created before there is anything to title it with.
+// `updated_at` is bumped on every turn so the list can be ordered by recency
+// rather than by when the thread happened to start.
+export const conversations = pgTable(
+  "conversations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    title: varchar("title"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  // The only read pattern: this user's threads, most recently active first.
+  (t) => [index("conversations_user_updated_idx").on(t.userId, t.updatedAt)]
+);
+
+// One row per turn of a conversation, in the order they happened.
+//
+// ON DELETE CASCADE for the same reason document_chunks cascades from documents:
+// deleting a thread must not leave turns behind that a later window query can
+// still pick up. The database enforces it, not application code.
+//
+// `recommendation_id` links an assistant turn to the ai_recommendations row that
+// produced it, which is what makes the whole run joinable from a message the user
+// can point at: message -> recommendation -> agent_runs (via
+// agent_runs.recommendation_id) -> the full trace. Nullable, because a user turn
+// has no recommendation and an assistant turn whose logging failed still belongs
+// in the thread.
+//
+// Turns are ORDERED BY created_at. There is no explicit ordinal column: the two
+// turns of an exchange are written at opposite ends of a multi-second pipeline
+// run, and the client will not send a second message while one is in flight, so
+// the timestamps are strictly increasing per conversation in practice. An ordinal
+// would have to be computed by reading the current max first, and on the
+// neon-http driver — one HTTP round trip per statement, no transaction — that
+// read-then-write is itself a race. A racy sequence number is worse than an
+// honest timestamp.
+export const conversationMessages = pgTable(
+  "conversation_messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    conversationId: uuid("conversation_id")
+      .notNull()
+      .references(() => conversations.id, { onDelete: "cascade" }),
+    role: messageRole("role").notNull(),
+    content: text("content").notNull(),
+    recommendationId: uuid("recommendation_id").references(() => aiRecommendations.id),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("conversation_messages_conv_created_idx").on(t.conversationId, t.createdAt)]
+);
+
 // One row per /api/agent-chat run: the persisted audit trace.
 //
 // A separate table rather than columns on `ai_recommendations`, because a run can
@@ -153,6 +223,11 @@ export const agentRuns = pgTable("agent_runs", {
   trace: jsonb("trace"),
   finalStatus: runStatus("final_status").notNull(),
   recommendationId: uuid("recommendation_id").references(() => aiRecommendations.id),
+  // Which thread this run belongs to. Nullable, and NOT redundant with
+  // recommendation_id: a run that failed never wrote a recommendation, so without
+  // this column the runs most worth investigating are exactly the ones that cannot
+  // be traced back to the conversation they broke.
+  conversationId: uuid("conversation_id").references(() => conversations.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

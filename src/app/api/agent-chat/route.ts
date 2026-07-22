@@ -7,6 +7,13 @@ import { agentGraph } from "../../../lib/agent/graph";
 import { saveRun } from "../../../lib/agent/trace/queries";
 import { consumeRateLimit, userSubject, CHAT_LIMIT } from "../../../lib/rate-limit/queries";
 import {
+  appendMessage,
+  createConversation,
+  getRecentTurns,
+  openConversation,
+} from "../../../lib/conversations/queries";
+import { summarizeAssistantTurn } from "../../../lib/conversations/summarize";
+import {
   withUsageCapture,
   flushUsage,
   summarizeUsage,
@@ -64,12 +71,67 @@ export async function POST(request: Request) {
   // before the graph (so a blocked request costs nothing downstream). Logged
   // rather than silently dropped — a screen whose hits are invisible cannot be
   // tuned, and a rise in blocks is itself a signal worth seeing.
-  const screen = screenChatInput(parsed.data.message, parsed.data.history ?? []);
+  //
+  // Only the message is screened now. It used to screen the client-supplied
+  // history too, because a payload could be planted in a fabricated prior turn.
+  // History is no longer supplied: every user turn in the window passed through
+  // this exact check before it was stored, and every assistant turn is this
+  // pipeline's own verified output. The check moved from the read to the write,
+  // where it only has to run once.
+  const screen = screenChatInput(parsed.data.message);
   if (screen.blocked) {
     console.warn(
       `agent-chat input screened: reason=${screen.reason} where=${screen.where} user=${session.userId}`
     );
     return NextResponse.json({ error: SCREEN_BLOCK_MESSAGE }, { status: 400 });
+  }
+
+  // Resolve the thread this message belongs to.
+  //
+  // A supplied id is checked against the caller's OWN conversations. It arrives in
+  // a request body, so an unchecked id would let any authenticated user read
+  // another user's history into their prompt and append to their thread. A
+  // mismatch is reported as 404, not 403: confirming that an id exists but belongs
+  // to someone else is itself the leak.
+  let conversationId: string;
+  try {
+    if (parsed.data.conversationId) {
+      const owned = await openConversation(parsed.data.conversationId, session.userId);
+      if (!owned) {
+        return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
+      }
+      conversationId = owned;
+    } else {
+      // First message of a new thread. Titled from the message the user typed.
+      conversationId = await createConversation(session.userId, parsed.data.message);
+    }
+  } catch (error) {
+    console.error("agent-chat conversation resolution failed:", error);
+    return NextResponse.json(
+      { error: "The assistant is unavailable right now. Please try again." },
+      { status: 502 }
+    );
+  }
+
+  // The history window, read BEFORE this message is stored — a message must never
+  // appear in its own history, or resolve_query would try to resolve a question
+  // against itself.
+  //
+  // Best-effort on both sides: a history read that fails degrades to first-turn
+  // behaviour (the query reaches the pipeline unresolved) and a turn that fails to
+  // store costs the next follow-up its context. Neither is worth failing a request
+  // the user can still be answered.
+  let history: Awaited<ReturnType<typeof getRecentTurns>> = [];
+  try {
+    history = await getRecentTurns(conversationId);
+  } catch (error) {
+    console.error("agent-chat history read failed; continuing without it:", error);
+  }
+
+  try {
+    await appendMessage({ conversationId, role: "user", content: parsed.data.message });
+  } catch (error) {
+    console.error("agent-chat user turn write failed:", error);
   }
 
   // Correlation id for the whole run. Minted here (not defaulted inside the
@@ -88,9 +150,11 @@ export async function POST(request: Request) {
       agentGraph.invoke({
         userId: session.userId,
         query: parsed.data.message,
-        // Active-conversation context for follow-up resolution. Empty when absent, so
-        // the resolve_query node leaves the query untouched (first-turn behaviour).
-        history: parsed.data.history ?? [],
+        // Active-conversation context for follow-up resolution, loaded above from
+        // this thread's stored turns. Empty on the first turn, so the resolve_query
+        // node leaves the query untouched.
+        history,
+        conversationId,
         runId,
         // persist defaults true: the graph updates memory, logs the turn, and
         // flushes the audit trace to agent_runs.
@@ -98,6 +162,26 @@ export async function POST(request: Request) {
     );
 
     await flushUsage(usageRows);
+
+    // Store the assistant's turn: the WHOLE response flattened to text, not just
+    // ai_suggestion, so a follow-up like "and the roadmap for that?" has the
+    // roadmap, skills, next steps and resource titles to resolve against — the
+    // same thing the user saw. `recommendationId` links this turn to the
+    // ai_recommendations row behind it, which is what makes a message the user can
+    // point at joinable to the run that produced it.
+    try {
+      const assistantTurn = summarizeAssistantTurn(result.sections);
+      if (assistantTurn) {
+        await appendMessage({
+          conversationId,
+          role: "assistant",
+          content: assistantTurn,
+          recommendationId: result.recommendationId,
+        });
+      }
+    } catch (error) {
+      console.error("agent-chat assistant turn write failed:", error);
+    }
 
     // The dynamic sections are unchanged. Additionally expose the EXTERNAL (Tavily)
     // sourced results and the per-tool MCP transport records — both already computed
@@ -107,6 +191,9 @@ export async function POST(request: Request) {
     const cd = result.careerData;
     return NextResponse.json(
       {
+        // Echoed so the client can send it with the next message. On the first
+        // message of a thread this is the only place the id exists.
+        conversationId,
         intent: result.intent,
         plan: result.plan,
         sections: result.sections,
@@ -143,6 +230,9 @@ export async function POST(request: Request) {
         query: parsed.data.message,
         trace: [],
         finalStatus: "failed",
+        // A failed run has no recommendation, so this column is the only thing
+        // tying it to the conversation it broke.
+        conversationId,
       });
     } catch (traceError) {
       console.error("agent-chat failed-run trace write failed:", traceError);

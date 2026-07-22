@@ -55,6 +55,8 @@ export async function persistTraceNode(
       trace: state.trace,
       finalStatus: deriveFinalStatus(state),
       recommendationId: state.recommendationId,
+      // Empty for a direct/partial invocation (tests); the column is nullable.
+      conversationId: state.conversationId || undefined,
       executionPlan: state.executionPlan,
     });
   } catch (error) {
