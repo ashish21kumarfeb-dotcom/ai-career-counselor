@@ -17,6 +17,7 @@ export const INTENTS = [
   "job_search",
   "resume_help",
   "agency_search",
+  "company_discovery",
   "other",
 ] as const;
 
@@ -31,6 +32,7 @@ const CLASSIFIER_PROMPT = `You are an intent classifier for an AI career counsel
 - job_search: finding jobs, applications, interviews, or hiring.
 - resume_help: writing, reviewing, or improving a resume or CV.
 - agency_search: finding a consulting agency, recruiter, or placement service.
+- company_discovery: finding real companies/firms/startups/employers that are hiring or match a criterion, usually by role and/or location (e.g. "top AI companies hiring in Berlin", "latest consulting firms in Canada", "companies hiring DevOps engineers").
 - other: anything that does not clearly fit the labels above.
 
 Respond with ONLY the single label, in lowercase, and nothing else.`;

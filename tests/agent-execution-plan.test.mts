@@ -7,6 +7,7 @@ import { finalizeExecutionPlan, fallbackProposal, fallbackNeeds } from "../src/l
 import { MANDATORY_AGENTS, AGENT_NAMES, TOOL_NAMES } from "../src/lib/agent/plan/registry";
 import { plannerProposalSchema } from "../src/lib/agent/plan/types";
 import type { PlannerProposal } from "../src/lib/agent/plan/types";
+import { agencyGate, liveBusinessGate } from "../src/lib/agent/schema";
 
 let passed = 0;
 let failed = 0;
@@ -96,6 +97,60 @@ console.log("\n== tools derived from GATED sections, not from the proposal ==");
   const { executionPlan: ep } = finalizeExecutionPlan(proposal({ expectedSections: ["resources", "courses"] }), LEARN, false);
   check("searchResources allowed when a link section is gated in", ep.tools.find((t) => t.tool === "searchResources")?.allowed === true);
   check("searchAgencies not allowed for a learning query", ep.tools.find((t) => t.tool === "searchAgencies")?.allowed === false);
+}
+
+console.log("\n== freshness / live-hiring routes to web search, not the seeded DB ==");
+{
+  // The reported failure: freshness + live-business queries were answered from the
+  // seeded consulting_agencies DB. They must now (a) fail agencyGate so the DB tool
+  // is vetoed, and (b) open the external searchHiringCompanies lane. Curated/verified
+  // partner queries must keep the opposite routing.
+  const FRESH_QUERIES = [
+    "Find the latest AI consulting firms hiring in Germany",
+    "Top AI companies hiring in Berlin",
+    "Recent DevOps consulting firms in Canada",
+    "Who is currently hiring AI engineers in Germany?",
+  ];
+  const CURATED_QUERIES = [
+    "Recommend verified consulting agencies",
+    "Show career counseling agencies",
+  ];
+
+  // Gate-level: the single source of truth every call site reads from.
+  for (const q of FRESH_QUERIES) {
+    check(`[${q.slice(0, 32)}…] liveBusinessGate fires`, liveBusinessGate(q) === true);
+    check(`[${q.slice(0, 32)}…] agencyGate vetoes the DB tool`, agencyGate(q) === false);
+  }
+  for (const q of CURATED_QUERIES) {
+    check(`[${q}] not treated as live-business`, liveBusinessGate(q) === false);
+    check(`[${q}] agencyGate still passes (curated DB)`, agencyGate(q) === true);
+  }
+
+  // Routing-level via finalizeExecutionPlan. Force the kill switch on so the external
+  // lane's allow verdict is decided by the gate alone, independent of ambient env.
+  const prevExternal = process.env.EXTERNAL_SEARCH_ENABLED;
+  process.env.EXTERNAL_SEARCH_ENABLED = "true";
+  try {
+    for (const q of FRESH_QUERIES) {
+      const { executionPlan: ep } = finalizeExecutionPlan(
+        proposal({ expectedSections: ["ai_suggestion", "agencies"], tools: [{ tool: "searchAgencies", reason: "user asked for firms" }] }),
+        q, false
+      );
+      const hiring = ep.tools.find((t) => t.tool === "searchHiringCompanies")!;
+      const agency = ep.tools.find((t) => t.tool === "searchAgencies")!;
+      check(`[${q.slice(0, 32)}…] searchHiringCompanies allowed`, hiring.allowed === true, JSON.stringify(hiring));
+      check(`[${q.slice(0, 32)}…] searchAgencies vetoed`, agency.allowed === false, JSON.stringify(agency));
+    }
+    const { executionPlan: curatedEp } = finalizeExecutionPlan(
+      proposal({ expectedSections: ["ai_suggestion", "agencies"], tools: [{ tool: "searchAgencies", reason: "curated partners" }] }),
+      "Recommend verified consulting agencies", false
+    );
+    check("curated query: searchAgencies allowed", curatedEp.tools.find((t) => t.tool === "searchAgencies")?.allowed === true);
+    check("curated query: searchHiringCompanies not allowed", curatedEp.tools.find((t) => t.tool === "searchHiringCompanies")?.allowed === false);
+  } finally {
+    if (prevExternal === undefined) delete process.env.EXTERNAL_SEARCH_ENABLED;
+    else process.env.EXTERNAL_SEARCH_ENABLED = prevExternal;
+  }
 }
 
 console.log("\n== risk checks are computed, never authored by the model ==");

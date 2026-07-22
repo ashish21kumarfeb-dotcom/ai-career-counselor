@@ -16,6 +16,7 @@ import {
   searchCareerRoadmaps,
   searchMarketSignals,
   searchIndustryArticles,
+  searchHiringCompanies,
 } from "../src/lib/external/tavily";
 
 // registerTool takes a RAW ZOD SHAPE, not z.object({...}).
@@ -41,6 +42,7 @@ const externalToolInput = {
 export const searchCareerRoadmapsInput = externalToolInput;
 export const searchMarketSignalsInput = externalToolInput;
 export const searchIndustryArticlesInput = externalToolInput;
+export const searchHiringCompaniesInput = externalToolInput;
 
 export const TOOL_DESCRIPTIONS = {
   searchAgencies:
@@ -53,6 +55,8 @@ export const TOOL_DESCRIPTIONS = {
     "Search the web (Tavily) for QUALITATIVE labor-market signals — demand, hiring and growth trends — for a field, biased toward reputable sources. Returns only SOURCED results (real http URL + source host). These describe what a cited source says; they are NOT salary or job guarantees and make no numeric promises. Returns an empty array when nothing matches.",
   searchIndustryArticles:
     "Search the web (Tavily) for current industry articles and analysis about a field. Returns only SOURCED results (real http URL + source host + publish date when available). Reports what published articles say; never presents an unnamed blogger as an authority and never invents expert or executive claims. Returns an empty array when nothing matches.",
+  searchHiringCompanies:
+    "Search the OPEN web (Tavily) for real companies currently hiring for a role/field in a location — for freshness/live-hiring queries ('top companies hiring in Berlin', 'latest firms hiring in Germany'). Returns only SOURCED results (real http URL + source host), surfacing company and careers/jobs pages. Never invents a company and makes no job or salary guarantee. Returns an empty array when nothing matches. Use this instead of searchAgencies for live-market questions; searchAgencies is for curated verified partner agencies only.",
 } as const;
 
 // Handlers return the rows as JSON text. MCP content blocks are strings, so the
@@ -89,5 +93,10 @@ export async function handleSearchMarketSignals(args: { query: string; limit?: n
 
 export async function handleSearchIndustryArticles(args: { query: string; limit?: number }) {
   const rows = await searchIndustryArticles(args.query, args.limit ?? 5);
+  return { content: [{ type: "text" as const, text: JSON.stringify(rows) }] };
+}
+
+export async function handleSearchHiringCompanies(args: { query: string; limit?: number }) {
+  const rows = await searchHiringCompanies(args.query, args.limit ?? 5);
   return { content: [{ type: "text" as const, text: JSON.stringify(rows) }] };
 }

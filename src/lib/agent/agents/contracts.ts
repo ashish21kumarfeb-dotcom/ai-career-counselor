@@ -57,6 +57,32 @@ export const externalResultSchema = z.object({
 });
 export type ExternalResult = z.infer<typeof externalResultSchema>;
 
+// A structured company entity EXTRACTED from the sourced hiring-companies results
+// above, for an entity/company-discovery query ("top firms hiring in Berlin").
+// Unlike ExternalResult (one row per retrieved web page), this is one row per REAL
+// company, distilled from those pages. The sourced-only invariant is stricter here
+// because the risk is inventing a company: `sourceUrl` MUST be one of the retrieved
+// result URLs the company was found in (enforced deterministically after
+// extraction, not trusted from the model), and `website` is kept only when it is a
+// url whose host actually appears in the retrieved set — a guessed company domain is
+// dropped to null. `roles`/`location`/`whyMatched` are null/[] when the source text
+// did not state them; the extractor never fills them from model knowledge.
+export const hiringCompanySchema = z.object({
+  name: z.string(),
+  // Short, grounded reason this company matched the query (from the source snippet).
+  whyMatched: z.string().nullable(),
+  // Hiring roles named in the source text; [] when none were stated.
+  roles: z.array(z.string()),
+  location: z.string().nullable(),
+  // Official careers/company site — only when it appears in the retrieved data.
+  website: z.string().nullable(),
+  // The retrieved result this company was extracted from (sourced-only: a real
+  // http url from the hiring-companies lane), and its bare host for display.
+  sourceUrl: z.string(),
+  sourceName: z.string(),
+});
+export type HiringCompany = z.infer<typeof hiringCompanySchema>;
+
 // --- 1. Profile Agent ---------------------------------------------------------
 // Responsibility: load + summarize the user's profile and relevant memory, and
 // distil their background and hard constraints. Deterministic (no LLM) so its
@@ -135,6 +161,15 @@ export const careerDataAgentOutputSchema = z.object({
   roadmaps: z.array(externalResultSchema).optional(),
   marketSignals: z.array(externalResultSchema).optional(),
   industryArticles: z.array(externalResultSchema).optional(),
+  // Real companies hiring now, retrieved from the open web (Tavily) for
+  // freshness/live-hiring queries. Same sourced-only, audited, optional-for-fixtures
+  // treatment as the three lanes above; ground the Recommendation Agent's free text.
+  hiringCompanies: z.array(externalResultSchema).optional(),
+  // The structured companies extracted from `hiringCompanies` for an entity/company-
+  // discovery query. Drives the dedicated "Hiring Companies" UI section. Optional (and
+  // empty when extraction was skipped, degraded, or the lane returned nothing) so
+  // existing hand-off fixtures stay valid — exactly like the lanes above.
+  hiringCompanyEntities: z.array(hiringCompanySchema).optional(),
   sourcesUsed: z.array(sourceRefSchema),
   missingDataNotes: z.array(z.string()),
   // One record per retrieval tool this run considered — the evidence behind any

@@ -22,6 +22,7 @@
     "test:validation": "tsx tests/profile-validation.test.mts",
     "test:onboarding": "tsx tests/onboarding-pipeline.test.mts",
     "test:career-data": "tsx tests/agent-career-data.test.mts",
+    "test:hiring": "tsx tests/agent-hiring-companies.test.mts",
     "test:reco": "tsx tests/agent-recommendation.test.mts",
     "test:verify": "tsx tests/agent-verification.test.mts",
     "test:grounding": "tsx tests/agent-grounding.test.mts",

@@ -22,12 +22,14 @@ import {
   searchCareerRoadmaps,
   searchMarketSignals,
   searchIndustryArticles,
+  searchHiringCompanies,
   tavilyConfigured,
 } from "../src/lib/external/tavily";
 import {
   handleSearchCareerRoadmaps,
   handleSearchMarketSignals,
   handleSearchIndustryArticles,
+  handleSearchHiringCompanies,
 } from "../mcp/tools";
 import { externalResultSchema } from "../src/lib/agent/agents/contracts";
 import { z } from "zod";
@@ -164,6 +166,7 @@ console.log("\n== C. MCP handlers emit normalized, re-validatable JSON ==");
     ["searchCareerRoadmaps", handleSearchCareerRoadmaps],
     ["searchMarketSignals", handleSearchMarketSignals],
     ["searchIndustryArticles", handleSearchIndustryArticles],
+    ["searchHiringCompanies", handleSearchHiringCompanies],
   ] as const) {
     const out = await handler({ query: "data analyst", limit: 3 });
     const text = out.content[0]?.text ?? "";
@@ -183,10 +186,34 @@ console.log("\n== D. direct-fallback pattern: a provider throw degrades to [] ==
   const safeRoadmaps = await searchCareerRoadmaps("x", 3).catch(() => [] as unknown[]);
   const safeMarket = await searchMarketSignals("x", 3).catch(() => [] as unknown[]);
   const safeArticles = await searchIndustryArticles("x", 3).catch(() => [] as unknown[]);
+  const safeHiring = await searchHiringCompanies("x", 3).catch(() => [] as unknown[]);
   check("searchCareerRoadmaps throw -> [] via catch", Array.isArray(safeRoadmaps) && safeRoadmaps.length === 0);
   check("searchMarketSignals throw -> [] via catch", Array.isArray(safeMarket) && safeMarket.length === 0);
   check("searchIndustryArticles throw -> [] via catch", Array.isArray(safeArticles) && safeArticles.length === 0);
+  check("searchHiringCompanies throw -> [] via catch", Array.isArray(safeHiring) && safeHiring.length === 0);
   check("unwrapped helper still throws (reason not swallowed at the source)", await threw(() => searchCareerRoadmaps("x", 3)));
+  restoreFetch();
+}
+
+// ============ E. Hiring-companies lane searches the OPEN web ============
+console.log("\n== E. searchHiringCompanies: open web (no include_domains), company-focused query ==");
+{
+  let sentBody: Record<string, unknown> = {};
+  globalThis.fetch = (async (_url: unknown, init: { body?: string } = {}) => {
+    sentBody = init.body ? JSON.parse(init.body) : {};
+    return new Response(
+      JSON.stringify({ results: [{ title: "Careers — Acme", url: "https://acme.example/careers", content: "We are hiring engineers in Berlin." }] }),
+      { status: 200 }
+    );
+  }) as unknown as typeof fetch;
+
+  const rows = await searchHiringCompanies("Top AI companies hiring in Berlin", 3);
+  // The DISTINGUISHING invariant vs. the market-signals lane: no trusted-domain
+  // filter, so real company/careers sites are eligible instead of being excluded.
+  check("does NOT restrict to include_domains (open web)", sentBody.include_domains === undefined, JSON.stringify(sentBody.include_domains));
+  check("query is company/careers focused", typeof sentBody.query === "string" && /companies hiring careers jobs/.test(sentBody.query as string), String(sentBody.query));
+  check("carries the location subject term", /berlin/i.test(sentBody.query as string), String(sentBody.query));
+  check("returns the sourced company row", rows.length === 1 && rows[0]?.url === "https://acme.example/careers", JSON.stringify(rows.map((r) => r.url)));
   restoreFetch();
 }
 

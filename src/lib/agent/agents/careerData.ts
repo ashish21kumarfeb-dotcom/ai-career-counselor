@@ -21,6 +21,7 @@ import {
   searchCareerRoadmaps,
   searchMarketSignals,
   searchIndustryArticles,
+  searchHiringCompanies,
 } from "../../external/tavily";
 import {
   agencyGate,
@@ -28,8 +29,10 @@ import {
   careerRoadmapGate,
   marketSignalGate,
   industryArticleGate,
+  liveBusinessGate,
 } from "../schema";
 import { buildDbSections } from "../sections";
+import { extractHiringCompanies } from "./hiringCompanies";
 import { callTool, type ToolCallResult } from "../tools/mcpClient";
 import {
   careerDataAgentOutputSchema,
@@ -81,6 +84,11 @@ export async function runCareerDataAgent(
   const wantsRoadmaps = externalOn && careerRoadmapGate(query);
   const wantsMarket = externalOn && marketSignalGate(query);
   const wantsArticles = externalOn && industryArticleGate(query);
+  // Live-business / hiring-companies lane: real companies from the open web when the
+  // query wants current hiring activity. Same master-kill-switch + keyword-gate shape
+  // as the lanes above; liveBusinessGate ALSO vetoed the DB agency tool (agencyGate),
+  // so a freshness query lands here instead of on the seeded consulting_agencies rows.
+  const wantsHiring = externalOn && liveBusinessGate(query);
 
   const contextTerms = contextTermsFrom(userContext);
 
@@ -123,8 +131,15 @@ export async function runCareerDataAgent(
       : Promise.resolve(skipped() as ToolCallResult<ExternalResult>);
 
   const retrievalStart = performance.now();
-  const [ragDocs, resourceResult, agencyResult, roadmapResult, marketResult, articleResult] =
-    await Promise.all([
+  const [
+    ragDocs,
+    resourceResult,
+    agencyResult,
+    roadmapResult,
+    marketResult,
+    articleResult,
+    hiringResult,
+  ] = await Promise.all([
       // contextTerms are passed HERE too, not only to searchResources below. They
       // were omitted, so the parameter's `[]` default applied and RAG grounding —
       // the lane whose passages the answer is actually built on — ranked without
@@ -167,6 +182,7 @@ export async function runCareerDataAgent(
       externalCall(wantsRoadmaps, "searchCareerRoadmaps", () => searchCareerRoadmaps(query, 5)),
       externalCall(wantsMarket, "searchMarketSignals", () => searchMarketSignals(query, 5)),
       externalCall(wantsArticles, "searchIndustryArticles", () => searchIndustryArticles(query, 5)),
+      externalCall(wantsHiring, "searchHiringCompanies", () => searchHiringCompanies(query, 5)),
     ]);
   const toolLatencyMs = Math.round(performance.now() - retrievalStart);
 
@@ -175,6 +191,7 @@ export async function runCareerDataAgent(
   const roadmaps = roadmapResult.data;
   const marketSignals = marketResult.data;
   const industryArticles = articleResult.data;
+  const hiringCompanies = hiringResult.data;
 
   // One tool-call record per tool. `ok` is false for a degraded run (fell back to
   // direct, or an external provider outage) so a reader never mistakes a fallback
@@ -194,6 +211,7 @@ export async function runCareerDataAgent(
     record("searchCareerRoadmaps", roadmapResult),
     record("searchMarketSignals", marketResult),
     record("searchIndustryArticles", articleResult),
+    record("searchHiringCompanies", hiringResult),
   ];
 
   // Reuse the shared, LLM-free mappers: partition resources vs courses and map
@@ -237,6 +255,7 @@ export async function runCareerDataAgent(
   externalNote("career roadmaps", "searchCareerRoadmaps", roadmapResult);
   externalNote("market signals", "searchMarketSignals", marketResult);
   externalNote("industry articles", "searchIndustryArticles", articleResult);
+  externalNote("companies hiring", "searchHiringCompanies", hiringResult);
 
   // sourcesUsed records everything that grounds the rendered answer: the DB
   // agencies + resource docs, plus the external (Tavily) sourced results now that
@@ -249,12 +268,21 @@ export async function runCareerDataAgent(
     ...roadmaps.map((r) => ({ id: r.url, type: "external_roadmap", sourceUrl: r.url })),
     ...marketSignals.map((r) => ({ id: r.url, type: "external_market_signal", sourceUrl: r.url })),
     ...industryArticles.map((r) => ({ id: r.url, type: "external_industry_article", sourceUrl: r.url })),
+    ...hiringCompanies.map((r) => ({ id: r.url, type: "external_hiring_company", sourceUrl: r.url })),
   ];
   const sourcesUsed = [
     ...agencyRows.map((a) => ({ id: a.id, type: "agency", sourceUrl: a.sourceUrl })),
     ...resourceDocs.map((d) => ({ id: d.id, type: d.type, sourceUrl: d.sourceUrl })),
     ...externalSourceRefs,
   ];
+
+  // Company/entity-discovery step: distil the sourced hiring results into structured
+  // company entities for the dedicated "Hiring Companies" section. Runs ONLY when the
+  // live-hiring lane actually returned sourced rows (so it costs nothing on any other
+  // query), and is best-effort — the grounding firewall lives in coerceHiringCompanies,
+  // and any failure degrades to [] without touching the rest of the envelope.
+  const hiringCompanyEntities =
+    hiringCompanies.length > 0 ? await extractHiringCompanies(query, hiringCompanies) : [];
 
   const output: CareerDataAgentOutput = {
     ragDocs,
@@ -268,6 +296,12 @@ export async function runCareerDataAgent(
     roadmaps,
     marketSignals,
     industryArticles,
+    // Real companies hiring now (open web). Carried on the envelope, audited in
+    // toolCalls, folded into sourcesUsed above, and cited by the Recommendation Agent.
+    hiringCompanies,
+    // The structured companies extracted from those results (entity-discovery). Empty
+    // unless the hiring lane fired and yielded rows. Drives the Hiring Companies section.
+    hiringCompanyEntities,
     sourcesUsed,
     missingDataNotes,
     toolCalls,

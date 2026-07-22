@@ -180,6 +180,9 @@ export async function POST(request: Request) {
         roadmaps: cd?.roadmaps ?? [],
         marketSignals: cd?.marketSignals ?? [],
         industryArticles: cd?.industryArticles ?? [],
+        // Structured company entities for the Hiring Companies section (entity
+        // discovery). Empty unless the live-hiring lane fired and extraction ran.
+        hiringCompanies: cd?.hiringCompanyEntities ?? [],
       },
       // MCP provenance for the "Tools Used" indicator: which tools ran and over
       // which transport (mcp / direct fallback / skipped).

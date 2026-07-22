@@ -84,6 +84,7 @@ function externalReferences(
     { label: "Career roadmaps", rows: careerData.roadmaps ?? [] },
     { label: "Labor-market signals", rows: careerData.marketSignals ?? [] },
     { label: "Industry articles", rows: careerData.industryArticles ?? [] },
+    { label: "Companies hiring", rows: careerData.hiringCompanies ?? [] },
   ].filter((lane) => lane.rows.length > 0);
 }
 
@@ -102,7 +103,8 @@ export function hasExternalEvidence(careerData: CareerDataAgentOutput): boolean 
   return (
     (careerData.roadmaps?.length ?? 0) > 0 ||
     (careerData.marketSignals?.length ?? 0) > 0 ||
-    (careerData.industryArticles?.length ?? 0) > 0
+    (careerData.industryArticles?.length ?? 0) > 0 ||
+    (careerData.hiringCompanies?.length ?? 0) > 0
   );
 }
 

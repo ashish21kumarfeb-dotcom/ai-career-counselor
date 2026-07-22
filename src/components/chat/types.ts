@@ -35,11 +35,27 @@ export type ExternalResult = {
   score: number | null;
 };
 
-// The three external tool result sets, as returned by /api/agent-chat.
+// A structured company entity for the Hiring Companies section — mirrors
+// hiringCompanySchema in src/lib/agent/agents/contracts.ts. Extracted from the
+// sourced hiring results; `sourceUrl` is always a real retrieved http link.
+export type HiringCompany = {
+  name: string;
+  whyMatched: string | null;
+  roles: string[];
+  location: string | null;
+  website: string | null;
+  sourceUrl: string;
+  sourceName: string;
+};
+
+// The external tool result sets, as returned by /api/agent-chat. The first three are
+// raw sourced links; hiringCompanies is the structured entity-discovery result.
 export type ExternalSignals = {
   roadmaps: ExternalResult[];
   marketSignals: ExternalResult[];
   industryArticles: ExternalResult[];
+  // Optional so a response/snapshot written before this section existed still parses.
+  hiringCompanies?: HiringCompany[];
 };
 
 // One MCP tool-call record — how each retrieval tool ran this turn.

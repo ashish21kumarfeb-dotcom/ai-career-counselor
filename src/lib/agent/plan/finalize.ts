@@ -17,6 +17,7 @@ import {
   careerRoadmapGate,
   marketSignalGate,
   industryArticleGate,
+  liveBusinessGate,
   SECTIONS,
   type AgentPlan,
   type PlannerNeeds,
@@ -177,6 +178,15 @@ function deriveTools(
       reason: reasonFor("searchIndustryArticles", "Fetch sourced external industry articles (Tavily)."),
       gated: true,
       allowed: externalOn && industryArticleGate(query),
+    },
+    {
+      tool: "searchHiringCompanies",
+      reason: reasonFor(
+        "searchHiringCompanies",
+        "Fetch real companies hiring now from the open web (Tavily) for freshness/live-hiring queries."
+      ),
+      gated: true,
+      allowed: externalOn && liveBusinessGate(query),
     },
   ];
 

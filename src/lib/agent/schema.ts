@@ -117,8 +117,84 @@ const AGENCY_TERMS =
 const RESOURCE_TERMS =
   /\b(career\w*|path\w*|role\w*|job\w*|switch\w*|transition\w*|becom\w*|learn\w*|roadmap\w*|skill\w*|course\w*|certif\w*|prepar\w*|resource\w*|stud(?:y|ies|ying)|tutorial\w*|material\w*|upskill\w*|training)\b/i;
 
+// --- Freshness / live-business intent ----------------------------------------
+// The class of query that asks about CURRENT, real-world hiring activity — "who is
+// hiring now", "top companies hiring in Berlin", "latest firms hiring", "recent
+// consulting firms". The answer to these is a list of REAL companies with live
+// careers pages, which lives on the open web, not in the seeded consulting_agencies
+// table. So this gate does two jobs: it opens the external hiring-companies lane
+// (searchHiringCompanies), AND it vetoes the internal DB agency tool (agencyGate
+// below), so a freshness query never comes back with a static seeded partner.
+//
+// Deliberately profession/technology-agnostic (no role, city, or country is named):
+// a location like "Germany"/"Berlin" is carried by the query itself, not matched
+// here. Three independent signals, combined so a bare business noun alone never fires:
+//   - a live-hiring verb ("hiring", "openings", "vacancies") is sufficient on its own;
+//   - a freshness word ("latest", "current", "recent", "new") fires only alongside a
+//     business noun ("companies", "firms", "startups", "employers", "agencies");
+//   - a ranking/superlative word ("top", "best", "leading") ALSO fires only alongside a
+//     business noun — this is the "list me the companies" phrasing ("top cloud
+//     consulting companies in Canada", "best AI startups in London") that carries no
+//     hiring verb or freshness word yet is still pure entity discovery.
+const LIVE_HIRING_TERMS =
+  /\b(hiring|who(?:'s| is| are)\s+hiring|actively hiring|now hiring|recruiting for|job openings?|openings?|vacanc\w*)\b/i;
+const FRESHNESS_TERMS =
+  /\b(latest|current|currently|today|recent\w*|newly|new|these days|up[- ]?to[- ]?date|this (?:year|month))\b/i;
+const RANKING_TERMS =
+  /\b(top|best|leading|biggest|largest|notable|prominent|major|well[- ]?known|popular)\b/i;
+const BUSINESS_TERMS =
+  /\b(compan\w*|firms?|startups?|employers?|businesses|organi[sz]ations?|agenc\w*|consult\w*)\b/i;
+
+// Curated/verified-partner phrasing. When present, an agency query stays on the DB
+// tool even if it also reads as fresh ("recommend a new verified agency"): the user
+// is explicitly asking for our vetted partner list, not the open web.
+const CURATED_TERMS = /\b(verified|curated|partner\w*|trusted|vetted|recommend\w*|counsel\w*)\b/i;
+
+// True when the query wants current live-business/hiring activity — the trigger for
+// external web search over company/careers pages. Exported so the planner, the
+// retrieval boundary, and the agency veto all decide this from ONE definition.
+export function liveBusinessGate(query: string): boolean {
+  return (
+    LIVE_HIRING_TERMS.test(query) ||
+    ((FRESHNESS_TERMS.test(query) || RANKING_TERMS.test(query)) && BUSINESS_TERMS.test(query))
+  );
+}
+
+// Explicit request for market TRENDS or industry ANALYSIS, as opposed to a plain
+// "which companies are hiring" list. When a live-business query ALSO carries one of
+// these, the market/industry lanes stay open as supporting context; without one, a
+// company-discovery query gets the Hiring Companies answer alone (see
+// companyDiscoveryGate + marketSignalGate/industryArticleGate). Deliberately narrow:
+// only terms that name a trend/analysis/figure request, never a bare business noun.
+const MARKET_ANALYSIS_TERMS =
+  /\b(trend\w*|outlook|demand|growth|growing|forecast\w*|projection\w*|statistic\w*|salar\w*|pay|compensation|wages?|market analysis|industry analysis|market report|market share|landscape|state of|analysis|insight\w*)\b/i;
+
+// True when the user explicitly wants trend/analysis context, not just a company list.
+export function marketAnalysisRequested(query: string): boolean {
+  return MARKET_ANALYSIS_TERMS.test(query);
+}
+
+// A pure COMPANY/ENTITY-DISCOVERY query: it wants a LIST OF REAL COMPANIES (the
+// Hiring Companies section), not market trends or industry analysis. True when the
+// live-business signal fires AND the user did not also ask for trends/analysis. This
+// is the switch that stops an entity-discovery query ("top firms hiring in Berlin")
+// from ALSO filling the Market Signals and Industry Articles tabs — those bleed in
+// today only because "hiring"/"latest" happen to trip their keyword gates. Exported
+// so the retrieval boundary and the plan derive the suppression from ONE definition.
+export function companyDiscoveryGate(query: string): boolean {
+  return liveBusinessGate(query) && !marketAnalysisRequested(query);
+}
+
+// Agencies are the SENSITIVE, DB-only section. The base vocabulary is above; here we
+// also RESERVE the DB tool for curated/verified-partner intent: a live-business /
+// freshness query (which wants real companies from the open web) is vetoed UNLESS it
+// explicitly asks for verified/recommended partners. So "recommend verified
+// consulting agencies" and "show career counseling agencies" still hit the DB, while
+// "latest consulting firms hiring in Germany" routes to searchHiringCompanies instead.
 export function agencyGate(query: string): boolean {
-  return AGENCY_TERMS.test(query);
+  if (!AGENCY_TERMS.test(query)) return false;
+  if (liveBusinessGate(query) && !CURATED_TERMS.test(query)) return false;
+  return true;
 }
 
 export function resourceGate(query: string): boolean {
@@ -183,10 +259,18 @@ export function factualDataGate(query: string): boolean {
 // is also what gives the numeric grounding check something to match against. The
 // lanes stay independently gated for every other kind of query.
 export function marketSignalGate(query: string): boolean {
+  // A pure entity-discovery query wants companies, not market signals. Suppress this
+  // lane unless the user explicitly asked for trends/analysis (companyDiscoveryGate
+  // is false then), so "top firms hiring in Berlin" no longer opens Market Signals.
+  if (companyDiscoveryGate(query)) return false;
   return MARKET_TERMS.test(query) || factualDataGate(query);
 }
 
 export function industryArticleGate(query: string): boolean {
+  // Same suppression as marketSignalGate: an entity-discovery query does not open the
+  // Industry Articles lane on the back of a bare "latest"/"recent" unless it also asks
+  // for industry analysis. Those tabs are optional supporting context, not the answer.
+  if (companyDiscoveryGate(query)) return false;
   return ARTICLE_TERMS.test(query) || factualDataGate(query);
 }
 

@@ -8,6 +8,7 @@ import type {
   Sourced,
   ResourceItem,
   ExternalResult,
+  HiringCompany,
   ToolCall,
 } from "./types";
 
@@ -24,6 +25,7 @@ type TabKey =
   | "skill_focus"
   | "next_steps"
   | "agencies"
+  | "hiring_companies"
   | "career_roadmaps"
   | "market_signals"
   | "industry_articles"
@@ -37,6 +39,7 @@ const TAB_META: Record<TabKey, { label: string; icon: string }> = {
   skill_focus: { label: "Skills to focus", icon: "🎯" },
   next_steps: { label: "Next steps", icon: "✅" },
   agencies: { label: "Agencies", icon: "🏢" },
+  hiring_companies: { label: "Hiring Companies", icon: "🏗️" },
   career_roadmaps: { label: "Career Roadmaps", icon: "🌐" },
   market_signals: { label: "Market Signals", icon: "📊" },
   industry_articles: { label: "Industry Articles", icon: "📰" },
@@ -53,6 +56,9 @@ const TAB_ORDER: TabKey[] = [
   "skill_focus",
   "next_steps",
   "agencies",
+  // Hiring Companies is the PRIMARY answer for an entity-discovery query, so it leads
+  // the external group — ahead of the optional Market Signals / Industry Articles.
+  "hiring_companies",
   "career_roadmaps",
   "market_signals",
   "industry_articles",
@@ -91,6 +97,7 @@ function availableTabs(data: AgentResponse): TabKey[] {
     agencies: planned.includes("agencies") && !!s.agencies,
     // External sections show only when the tool actually returned sourced results
     // (empty when external search is disabled or nothing matched) — no empty tabs.
+    hiring_companies: (ext?.hiringCompanies?.length ?? 0) > 0,
     career_roadmaps: (ext?.roadmaps.length ?? 0) > 0,
     market_signals: (ext?.marketSignals.length ?? 0) > 0,
     industry_articles: (ext?.industryArticles.length ?? 0) > 0,
@@ -169,6 +176,73 @@ function ExternalCards({ items, caption }: { items: ExternalResult[]; caption?: 
           </a>
         ))}
       </div>
+    </div>
+  );
+}
+
+// Structured company entities for an entity/company-discovery query. Unlike the raw
+// ExternalCards, this renders one card per REAL company with the fields the discovery
+// flow extracts: name, why it matched, hiring roles, location, official careers site,
+// and the source it was found in. Every company carries a real sourced link.
+function HiringCompanyCards({ items }: { items: HiringCompany[] }) {
+  if (items.length === 0) {
+    return <p className="text-sm text-slate-400">No hiring companies found for this query.</p>;
+  }
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-slate-400">
+        Real companies surfaced from live web search — sourced, not guaranteed. Verify roles and openings on each company&apos;s careers page.
+      </p>
+      <ul className="space-y-3">
+        {items.map((c, i) => (
+          <li key={i} className="rounded-xl border border-slate-900/10 bg-slate-900/[0.03] p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="font-semibold text-heading">{c.name}</span>
+              {c.location ? (
+                <span className="inline-flex items-center gap-1 text-xs text-slate-400">
+                  <span aria-hidden>📍</span>
+                  {c.location}
+                </span>
+              ) : null}
+            </div>
+            {c.whyMatched ? (
+              <p className="mt-1.5 text-sm leading-6 text-slate-300">{c.whyMatched}</p>
+            ) : null}
+            {c.roles.length > 0 ? (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {c.roles.map((role, r) => (
+                  <span
+                    key={r}
+                    className="rounded-full border border-brand/25 bg-brand/10 px-2.5 py-0.5 text-[11px] font-medium text-slate-100"
+                  >
+                    {role}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+            <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+              {c.website ? (
+                <a
+                  href={c.website}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 font-medium text-accent hover:underline"
+                >
+                  Careers ↗ <span className="text-slate-400">{hostOf(c.website)}</span>
+                </a>
+              ) : null}
+              <a
+                href={c.sourceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-slate-400 hover:text-heading hover:underline"
+              >
+                Source: {c.sourceName || hostOf(c.sourceUrl)} ↗
+              </a>
+            </div>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -321,6 +395,8 @@ function SectionContent({ tab, data }: { tab: TabKey; data: AgentResponse }) {
       );
     case "agencies":
       return <AgencyCards section={s.agencies!} />;
+    case "hiring_companies":
+      return <HiringCompanyCards items={data.external!.hiringCompanies ?? []} />;
     case "career_roadmaps":
       return <ExternalCards items={data.external!.roadmaps} />;
     case "market_signals":

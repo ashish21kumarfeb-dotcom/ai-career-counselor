@@ -65,11 +65,12 @@ const EXTERNAL_TOOLS = [
   { name: "searchCareerRoadmaps", query: "data analyst" },
   { name: "searchMarketSignals", query: "data analyst" },
   { name: "searchIndustryArticles", query: "data analyst" },
+  { name: "searchHiringCompanies", query: "AI engineers in Germany" },
 ] as const;
 
 if (!tavilyConfigured()) {
   console.log(
-    "\nSKIP  external tools (searchCareerRoadmaps, searchMarketSignals, searchIndustryArticles):"
+    "\nSKIP  external tools (searchCareerRoadmaps, searchMarketSignals, searchIndustryArticles, searchHiringCompanies):"
   );
   console.log("      set TAVILY_API_KEY (and EXTERNAL_SEARCH_ENABLED=true) to verify them over MCP.");
 } else {

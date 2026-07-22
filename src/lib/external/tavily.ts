@@ -377,3 +377,24 @@ export function searchIndustryArticles(query: string, limit = 5): Promise<Extern
     maxResults: candidatePool(limit),
   }).then((rows) => rankByFocus(rows, vocab, TRUSTED_DOMAINS).slice(0, limit));
 }
+
+// Live-business / hiring-companies lane. Unlike the market-signals lane, this one
+// answers "which REAL companies are hiring for X in <location>" — so it searches the
+// OPEN WEB with NO include_domains filter: the useful results here are company sites
+// and their careers/jobs pages, which the statistical/analyst trusted-domain list
+// would exclude, not aggregate statistics. The location ("Germany", "Berlin", …)
+// rides along inside `subject` — it survives the stopword filter, so it focuses the
+// query without any hardcoded place list. Corpus is intent-driven like every other
+// lane (resolveSearchStrategy); "hiring" resolves to the general corpus, where
+// careers pages live. All the shared invariants still hold: sourced-only normalize(),
+// focus re-ranking (trusted sources still preferred as a tie-breaker), and a provider
+// outage THROWS so the caller degrades to [] rather than fabricating a company.
+export function searchHiringCompanies(query: string, limit = 5): Promise<ExternalResult[]> {
+  const { subject, vocab } = focusFor(query);
+  const { strategy } = resolveSearchStrategy(query);
+  return tavilySearch(`${subject} companies hiring careers jobs`, {
+    topic: strategy.corpus,
+    days: strategy.days,
+    maxResults: candidatePool(limit),
+  }).then((rows) => rankByFocus(rows, vocab, TRUSTED_DOMAINS).slice(0, limit));
+}
