@@ -29,9 +29,23 @@ type ChatPanelProps = {
   onSend: (text: string) => void;
   loading: boolean;
   error: string | null;
+  // Index of the turn whose response is currently shown in the Career Navigator,
+  // and a setter to pin a different one. Clicking an assistant bubble's pointer
+  // restores that turn's stored response into the navigator.
+  activeIndex: number;
+  onSelectResponse: (index: number) => void;
 };
 
-export function ChatPanel({ turns, message, onMessageChange, onSend, loading, error }: ChatPanelProps) {
+export function ChatPanel({
+  turns,
+  message,
+  onMessageChange,
+  onSend,
+  loading,
+  error,
+  activeIndex,
+  onSelectResponse,
+}: ChatPanelProps) {
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -84,7 +98,9 @@ export function ChatPanel({ turns, message, onMessageChange, onSend, loading, er
               </div>
             ) : "data" in t ? (
               // Assistant turn with a full envelope — live this session or restored
-              // from its render snapshot. Either way it also drives the navigator.
+              // from its render snapshot. Its pointer is a button: clicking it pins
+              // this turn's stored response into the navigator (no refetch). The
+              // active turn shows a "Showing" label instead.
               <div key={i} className="flex justify-start">
                 <div className="glass-card max-w-[90%] rounded-2xl px-4 py-3">
                   {t.data.sections.ai_suggestion ? (
@@ -92,9 +108,22 @@ export function ChatPanel({ turns, message, onMessageChange, onSend, loading, er
                   ) : (
                     <p className="text-sm leading-6 text-slate-200">Here&apos;s what I found for you.</p>
                   )}
-                  <p className="mt-2 text-xs font-medium text-accent">
-                    {t.rehydrated ? "Career Navigator restored →" : "Career Navigator updated →"}
-                  </p>
+                  <button
+                    type="button"
+                    onClick={() => onSelectResponse(i)}
+                    aria-pressed={i === activeIndex}
+                    className={`mt-2 text-xs font-medium transition-colors ${
+                      i === activeIndex
+                        ? "text-accent"
+                        : "text-slate-400 hover:text-accent"
+                    }`}
+                  >
+                    {i === activeIndex
+                      ? "Showing in Career Navigator"
+                      : t.rehydrated
+                        ? "Career Navigator restored →"
+                        : "Career Navigator updated →"}
+                  </button>
                 </div>
               </div>
             ) : (

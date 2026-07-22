@@ -20,6 +20,11 @@ export function CareerWorkspace() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
+  // Which assistant response drives the navigator. `null` means "follow the
+  // latest" — the default and what every new message resets to. A number pins the
+  // navigator to that turn index, letting the user revisit an earlier response
+  // (its stored envelope is reused as-is — never refetched or regenerated).
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
   // The server-side thread. Null until the first response comes back with an id;
   // sending it on every subsequent message is what makes those messages part of
   // the same conversation. The client no longer sends the turns themselves — the
@@ -89,24 +94,34 @@ export function CareerWorkspace() {
     };
   }, [initialConvId, router]);
 
-  // The most recent assistant response drives the navigator panel.
-  const latest = useMemo<AgentResponse | null>(() => {
+  // Index of the most recent assistant turn carrying an envelope. Every assistant
+  // turn with `data` qualifies — live this session or rehydrated from its stored
+  // snapshot. -1 when there is none yet.
+  const latestIndex = useMemo<number>(() => {
     for (let i = turns.length - 1; i >= 0; i--) {
       const t = turns[i];
-      // Only LIVE assistant turns carry an envelope; rehydrated ones are text-only
-      // and must not drive the navigator.
-      if (t.role === "assistant" && "data" in t) return t.data;
+      if (t.role === "assistant" && "data" in t) return i;
     }
-    return null;
+    return -1;
   }, [turns]);
 
-  // Number of LIVE assistant responses so far — used to remount the navigator on
-  // each new response so its selected tab resets to Overview. Rehydrated text
-  // turns are excluded: they never render a navigator to reset.
-  const responseCount = useMemo(
-    () => turns.reduce((n, t) => (t.role === "assistant" && "data" in t ? n + 1 : n), 0),
-    [turns]
-  );
+  // The turn index the navigator is currently showing: the pinned one if it still
+  // points at a valid envelope, otherwise the latest. A pinned index that no
+  // longer resolves (e.g. after "New chat") falls back to latest.
+  const displayedIndex = useMemo<number>(() => {
+    if (activeIndex !== null) {
+      const t = turns[activeIndex];
+      if (t && t.role === "assistant" && "data" in t) return activeIndex;
+    }
+    return latestIndex;
+  }, [activeIndex, turns, latestIndex]);
+
+  // The response that drives the navigator panel — the displayed turn's stored
+  // envelope. Reused directly; nothing is refetched when revisiting an old one.
+  const displayed = useMemo<AgentResponse | null>(() => {
+    const t = turns[displayedIndex];
+    return t && t.role === "assistant" && "data" in t ? t.data : null;
+  }, [turns, displayedIndex]);
 
   async function send(text: string) {
     const trimmed = text.trim();
@@ -114,6 +129,8 @@ export function CareerWorkspace() {
 
     setError(null);
     setMessage("");
+    // Unpin: a new message always makes the newest response active again.
+    setActiveIndex(null);
     setTurns((prev) => [...prev, { role: "user", content: trimmed }]);
     setLoading(true);
 
@@ -166,11 +183,12 @@ export function CareerWorkspace() {
     setMessage("");
     setError(null);
     setExpanded(false);
+    setActiveIndex(null);
     // Clear `?c=` so a reload after "New chat" doesn't resume the old thread.
     router.replace("/chat");
   }
 
-  const hasResponse = latest !== null;
+  const hasResponse = displayed !== null;
 
   const chat = (
     <ChatPanel
@@ -180,13 +198,17 @@ export function CareerWorkspace() {
       onSend={send}
       loading={loading}
       error={error}
+      activeIndex={displayedIndex}
+      onSelectResponse={setActiveIndex}
     />
   );
 
-  const navigator = latest ? (
+  const navigator = displayed ? (
+    // Keyed by the displayed turn so switching to another response (or a new one
+    // arriving) remounts the navigator and resets its tab to Overview.
     <CareerNavigator
-      key={responseCount}
-      data={latest}
+      key={displayedIndex}
+      data={displayed}
       expanded={expanded}
       onToggleExpand={() => setExpanded((e) => !e)}
     />
