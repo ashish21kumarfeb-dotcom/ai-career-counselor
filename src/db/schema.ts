@@ -198,6 +198,25 @@ export const conversationMessages = pgTable(
       .references(() => conversations.id, { onDelete: "cascade" }),
     role: messageRole("role").notNull(),
     content: text("content").notNull(),
+    // Full-fidelity render snapshot of an assistant turn: the exact AgentResponse
+    // envelope the client received (intent, plan, sections, external, tools,
+    // verification, evaluation). Stored so reopening or reloading a thread restores
+    // the same Career Navigator UI as when it was generated, not just a text
+    // transcript.
+    //
+    // DELIBERATELY DENORMALIZED, and distinct from `content`. `content` is the
+    // flattened text that feeds the prompt-history window (getRecentTurns ->
+    // resolveQuery) and is clipped to MAX_MESSAGE_CHARS; this is the unclipped
+    // structured payload the navigator renders from. It overlaps `sections` with
+    // ai_recommendations.final_answer on purpose: that column is the normalized
+    // audit/eval log (queried, free to evolve), this is the immutable replay of
+    // what the user saw. The two external-only parts of the envelope (Tavily
+    // results, MCP tool provenance) are not persisted anywhere else, so without
+    // this snapshot those tabs could not be restored at all.
+    //
+    // NULL on every user turn and on any legacy assistant turn written before this
+    // column existed — the client falls back to text-only rehydration for those.
+    response: jsonb("response"),
     recommendationId: uuid("recommendation_id").references(() => aiRecommendations.id),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },

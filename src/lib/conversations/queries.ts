@@ -68,11 +68,17 @@ export async function appendMessage(input: {
   role: "user" | "assistant";
   content: string;
   recommendationId?: string;
+  // The full render snapshot for an assistant turn (see conversation_messages.response
+  // in schema.ts). Stored UNCLIPPED — unlike `content`, which is bounded because it
+  // feeds the prompt window; this is replayed into the UI, not into a prompt. Undefined
+  // for user turns.
+  response?: unknown;
 }): Promise<void> {
   await db.insert(conversationMessages).values({
     conversationId: input.conversationId,
     role: input.role,
     content: input.content.trim().slice(0, MAX_MESSAGE_CHARS),
+    response: input.response,
     recommendationId: input.recommendationId,
   });
   // Bump the thread's recency so the (future) conversation list can order by it.
@@ -141,6 +147,10 @@ export async function getConversationMessages(
     .select({
       role: conversationMessages.role,
       content: conversationMessages.content,
+      // The render snapshot, when present. Assistant turns written after this
+      // column landed carry the full AgentResponse envelope here; user turns and
+      // legacy assistant turns are null and rehydrate as text only.
+      response: conversationMessages.response,
       createdAt: conversationMessages.createdAt,
     })
     .from(conversationMessages)

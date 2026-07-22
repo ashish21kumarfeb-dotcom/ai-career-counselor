@@ -48,8 +48,14 @@ export function CareerWorkspace() {
         const data = await res.json().catch(() => ({}));
         if (cancelled) return;
 
-        const messages: Array<{ role: "user" | "assistant"; content: string }> =
-          Array.isArray(data.messages) ? data.messages : [];
+        const messages: Array<{
+          role: "user" | "assistant";
+          content: string;
+          // The render snapshot, present on assistant turns stored with full
+          // fidelity. Null for user turns and for legacy assistant turns written
+          // before snapshots existed.
+          response?: AgentResponse | null;
+        }> = Array.isArray(data.messages) ? data.messages : [];
 
         // Empty means the id is stale, foreign, or unwritten (the route returns []
         // for a thread that is not this user's — see the ownership note there).
@@ -59,16 +65,17 @@ export function CareerWorkspace() {
           return;
         }
 
-        // Rehydrated assistant turns carry only stored text, not a full
-        // AgentResponse — the navigator cannot rebuild from them by design (see
-        // the Turn type). The transcript restores; the panel stays blank until the
-        // next live message.
+        // Full-fidelity rehydration: an assistant turn carrying its stored
+        // `response` envelope restores as a LIVE-shaped turn (`data`), so the Career
+        // Navigator rebuilds exactly as first generated — sections, external
+        // signals, tools, verification, and evaluation. A turn without a snapshot
+        // (legacy row) falls back to text-only; user turns are plain text.
         setTurns(
-          messages.map((m) =>
-            m.role === "user"
-              ? { role: "user", content: m.content }
-              : { role: "assistant", content: m.content }
-          )
+          messages.map((m): Turn => {
+            if (m.role === "user") return { role: "user", content: m.content };
+            if (m.response) return { role: "assistant", data: m.response, rehydrated: true };
+            return { role: "assistant", content: m.content };
+          })
         );
         setConversationId(initialConvId);
       } catch {

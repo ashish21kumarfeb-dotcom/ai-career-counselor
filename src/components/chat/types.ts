@@ -75,14 +75,18 @@ export type AgentResponse = {
 };
 
 // A turn as held by the workspace. Assistant turns come in two shapes:
-//   - `data`: a LIVE response this session, carrying the full AgentResponse that
-//     also drives the Career Navigator panel.
-//   - `content`: a REHYDRATED turn read back from conversation_messages after a
-//     reload, which stores only the flattened summary text (see
-//     src/lib/conversations/summarize.ts) — no envelope to rebuild the panel from.
-// A restored thread therefore reads as a clean transcript; the navigator stays
-// blank until the user sends the next live message.
+//   - `data`: a full AgentResponse envelope that drives the Career Navigator
+//     panel. Carried both by a LIVE response this session AND by a rehydrated turn
+//     restored from its stored render snapshot (conversation_messages.response) —
+//     so reopening a thread rebuilds the exact same navigator, not just text.
+//   - `content`: the text-only fallback, used only for LEGACY assistant turns
+//     written before render snapshots existed (their `response` is null). These
+//     restore as a transcript bubble with no navigator, since there is no envelope
+//     to rebuild from.
 export type Turn =
   | { role: "user"; content: string }
-  | { role: "assistant"; data: AgentResponse }
+  // `rehydrated` marks an envelope restored from a stored snapshot rather than
+  // produced live this session — the chat bubble uses it to say "restored" instead
+  // of "updated". Absent (falsy) on live turns.
+  | { role: "assistant"; data: AgentResponse; rehydrated?: boolean }
   | { role: "assistant"; content: string };

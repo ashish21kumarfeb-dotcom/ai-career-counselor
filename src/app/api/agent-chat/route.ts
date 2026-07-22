@@ -163,55 +163,66 @@ export async function POST(request: Request) {
 
     await flushUsage(usageRows);
 
-    // Store the assistant's turn: the WHOLE response flattened to text, not just
-    // ai_suggestion, so a follow-up like "and the roadmap for that?" has the
-    // roadmap, skills, next steps and resource titles to resolve against — the
-    // same thing the user saw. `recommendationId` links this turn to the
-    // ai_recommendations row behind it, which is what makes a message the user can
-    // point at joinable to the run that produced it.
+    // The full render envelope — assembled ONCE and used for two purposes below:
+    // returned to the client to drive the live Career Navigator, and persisted as
+    // the assistant turn's render snapshot so a reload rebuilds that same UI.
+    // Building it once is what keeps the stored snapshot and the live response
+    // guaranteed identical — they are the same object, not two constructions that
+    // could drift. `external` and `tools` come from result.careerData (the
+    // in-memory envelope); this is the only place they are captured in structured
+    // form, so the snapshot is the sole way those tabs survive a reload.
+    const cd = result.careerData;
+    const responsePayload = {
+      intent: result.intent,
+      plan: result.plan,
+      sections: result.sections,
+      external: {
+        roadmaps: cd?.roadmaps ?? [],
+        marketSignals: cd?.marketSignals ?? [],
+        industryArticles: cd?.industryArticles ?? [],
+      },
+      // MCP provenance for the "Tools Used" indicator: which tools ran and over
+      // which transport (mcp / direct fallback / skipped).
+      tools: cd?.toolCalls ?? [],
+      verification: result.verification,
+      evaluation: result.evaluation,
+    };
+
+    // Store the assistant's turn. Two representations, on purpose:
+    //   - `content`: the WHOLE response flattened to text, so a follow-up like "and
+    //     the roadmap for that?" has the roadmap, skills, next steps and resource
+    //     titles to resolve against — the same thing the user saw. This is what the
+    //     prompt-history window reads.
+    //   - `response`: the full structured envelope above, so reopening the thread
+    //     restores the exact Career Navigator, not just the transcript text.
+    // `recommendationId` links this turn to the ai_recommendations row behind it,
+    // which is what makes a message the user can point at joinable to the run that
+    // produced it. The turn is stored even when the flattened text is empty, so the
+    // snapshot is never lost to an empty summary.
     try {
       const assistantTurn = summarizeAssistantTurn(result.sections);
-      if (assistantTurn) {
-        await appendMessage({
-          conversationId,
-          role: "assistant",
-          content: assistantTurn,
-          recommendationId: result.recommendationId,
-        });
-      }
+      await appendMessage({
+        conversationId,
+        role: "assistant",
+        content: assistantTurn || "Here's what I found for you.",
+        response: responsePayload,
+        recommendationId: result.recommendationId,
+      });
     } catch (error) {
       console.error("agent-chat assistant turn write failed:", error);
     }
 
-    // The dynamic sections are unchanged. Additionally expose the EXTERNAL (Tavily)
-    // sourced results and the per-tool MCP transport records — both already computed
-    // on the Career Data envelope (result.careerData). This is response-shaping only:
-    // no agent, planner, retrieval, or MCP logic is touched. The full audit trace
-    // still lands in agent_runs, not here.
-    const cd = result.careerData;
     return NextResponse.json(
       {
         // Echoed so the client can send it with the next message. On the first
         // message of a thread this is the only place the id exists.
         conversationId,
-        intent: result.intent,
-        plan: result.plan,
-        sections: result.sections,
-        external: {
-          roadmaps: cd?.roadmaps ?? [],
-          marketSignals: cd?.marketSignals ?? [],
-          industryArticles: cd?.industryArticles ?? [],
-        },
-        // MCP provenance for the "Tools Used" indicator: which tools ran and over
-        // which transport (mcp / direct fallback / skipped).
-        tools: cd?.toolCalls ?? [],
-        verification: result.verification,
-        evaluation: result.evaluation,
+        ...responsePayload,
         // Per-run token totals. Surfaced on the response as well as persisted so
         // the cost of a turn is visible while developing without querying the DB.
         // Read-only reporting — nothing acts on these numbers yet, by design:
         // the allocator comes after there is a measured distribution to size it
-        // against.
+        // against. NOT part of the render snapshot — it is dev telemetry, not UI.
         usage: summarizeUsage(usageRows),
       },
       { status: 200 }
