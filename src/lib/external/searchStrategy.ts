@@ -148,7 +148,18 @@ export interface ResolvedStrategy {
 // priority match (first-declared wins a tie), and falls back to the evergreen
 // default when nothing matches. Pure and deterministic — no LLM, no network — so a
 // lane wrapper can call it inline before every Tavily request.
-export function resolveSearchStrategy(query: string): ResolvedStrategy {
+//
+// Optional `slots` (from extractIntent): an explicit freshness signal overrides
+// the regex table ONLY at the extremes — "breaking" forces the news corpus with
+// a 30-day window, matching the time-sensitive band below. Everything else
+// leaves the regex table authoritative; absent/degraded slots change nothing.
+export function resolveSearchStrategy(
+  query: string,
+  slots?: { freshness: "none" | "evergreen" | "recent" | "breaking" }
+): ResolvedStrategy {
+  if (slots?.freshness === "breaking") {
+    return { intent: "slot_breaking", strategy: { corpus: "news", days: 30 } };
+  }
   const q = query.toLowerCase();
   let best: SearchIntent | undefined;
   for (const intent of SEARCH_INTENTS) {

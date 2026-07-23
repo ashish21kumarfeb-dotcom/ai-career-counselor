@@ -69,6 +69,12 @@ export const runStatus = pgEnum("run_status", [
   "regenerated",
   "fallback",
   "failed",
+  // Appended values (Postgres enums are append-only; never reorder):
+  // `blocked`   — the input guardrail stopped the run before any LLM call.
+  // `replanned` — verification sent the run back to the planner for
+  //               re-retrieval, and the re-planned pass was approved.
+  "blocked",
+  "replanned",
 ]);
 
 export const users = pgTable("users", {
@@ -238,6 +244,9 @@ export const agentRuns = pgTable("agent_runs", {
   userId: uuid("user_id").references(() => users.id),
   query: text("query").notNull(),
   intent: varchar("intent"),
+  // Structured slots from intent extraction (role, location, skills, freshness,
+  // …). Null on legacy rows and when extraction was degraded.
+  intentSlots: jsonb("intent_slots"),
   executionPlan: jsonb("execution_plan"),
   trace: jsonb("trace"),
   finalStatus: runStatus("final_status").notNull(),
@@ -247,6 +256,44 @@ export const agentRuns = pgTable("agent_runs", {
   // this column the runs most worth investigating are exactly the ones that cannot
   // be traced back to the conversation they broke.
   conversationId: uuid("conversation_id").references(() => conversations.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// --- Offline evaluation (RAGAS / DeepEval harness) ----------------------------
+// One row per offline evaluation RUN (a framework executed over a dataset), plus
+// one eval_results row per evaluated case. Written by scripts/eval-ingest.mts
+// from the Python harness's JSON report — the Python side never touches the DB,
+// so Drizzle stays the single schema owner. Entirely outside the request path.
+export const evalRuns = pgTable("eval_runs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  // Which harness produced the scores ("ragas", "deepeval", ...).
+  framework: varchar("framework").notNull(),
+  // Dataset identity (e.g. "golden-2026-07-23", "prod-2026-07-23").
+  dataset: varchar("dataset").notNull(),
+  datasetSize: integer("dataset_size").notNull(),
+  // Judge model, embedding model, metric list — whatever reproduces the run.
+  config: jsonb("config"),
+  // Aggregate metrics for the run (e.g. {faithfulness: 0.91, ...}).
+  metrics: jsonb("metrics"),
+  // Per-metric delta vs the committed baseline, when a comparison ran.
+  baselineDelta: jsonb("baseline_delta"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const evalResults = pgTable("eval_results", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  evalRunId: uuid("eval_run_id")
+    .notNull()
+    .references(() => evalRuns.id, { onDelete: "cascade" }),
+  // Nullable: golden-dataset cases are synthetic runs with no persisted
+  // recommendation row; production exports carry the real id.
+  recommendationId: uuid("recommendation_id").references(() => aiRecommendations.id),
+  // The dataset's own case identity (recommendation id or golden case slug).
+  caseId: varchar("case_id").notNull(),
+  // Per-case metric scores.
+  metrics: jsonb("metrics"),
+  // Whether the case cleared the harness's thresholds (null when not judged).
+  passed: boolean("passed"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

@@ -42,6 +42,10 @@ function makeState(over: Partial<AgentStateType>): AgentStateType {
     recommendation: undefined,
     verificationResult: undefined,
     regenerationAttempts: 0,
+    guardrail: undefined,
+    intentSlots: undefined,
+    replanAttempts: 0,
+    plannerFeedback: undefined,
     ...over,
   };
 }

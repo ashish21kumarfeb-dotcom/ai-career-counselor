@@ -1,7 +1,8 @@
 // The agentic-chat graph, an explicit multi-agent (internal A2A) flow:
-// START -> resolve query -> Profile Agent -> intent -> planner ->
-// Career Data Agent -> Recommendation Agent -> Verification Agent ->
+// START -> input guardrail -> resolve query -> Profile Agent -> intent ->
+// planner -> Career Data Agent -> Recommendation Agent -> Verification Agent ->
 // memory -> evaluate -> log -> END.
+// (A blocked input short-circuits: guardrail -> persist trace -> END.)
 // Exposed via /api/agent-chat. Compiled once and reused.
 //
 // The four agents are standalone cores (src/lib/agent/agents/*) wrapped by thin
@@ -30,24 +31,52 @@ import { evaluateNode } from "./nodes/evaluate";
 import { logNode } from "./nodes/log";
 import { persistTraceNode } from "./nodes/persistTrace";
 import { safeFallbackNode } from "./nodes/safeFallback";
+import { inputGuardrailNode } from "./nodes/inputGuardrail";
+import { shadowCompare } from "./lanes";
+import { agentConfig } from "./config";
 import type { AgentStateType } from "./state";
+
+// Where a run goes after the input guardrail. Blocked runs short-circuit
+// straight to persist_trace: no LLM calls, no retrieval, no memory or logged
+// answer — but a recorded agent_runs row with finalStatus "blocked". A missing
+// result routes "ok": the screen is fail-open by design (a false block loses a
+// legitimate question; a false allow lands on the real defenses downstream —
+// see src/lib/chat/screen.ts). Exported for tests.
+export function routeAfterGuardrail(state: AgentStateType): "ok" | "blocked" {
+  return state.guardrail?.blocked ? "blocked" : "ok";
+}
 
 // Where a run goes after verification. Pure and total, so the loop's termination
 // is a property of this function rather than of the graph's shape:
-//   approved                  -> proceed (first pass or a successful retry)
-//   rejected, no retry yet    -> regenerate with the verifier's feedback
-//   rejected, already retried -> stop trying; ship a safe fallback
-// Exported for tests.
-export const MAX_REGENERATIONS = 1;
+//   approved                          -> proceed (first pass or a successful retry)
+//   rejected + evidence insufficient  -> back to the PLANNER (re-plan, re-retrieve)
+//   rejected, retries remaining       -> regenerate with the verifier's feedback
+//   rejected, retries exhausted       -> stop trying; ship a safe fallback
+// Replan is checked BEFORE regenerate: when verification says the evidence is
+// missing, regenerating against the same evidence is wasted spend.
+// Budgets come from agentConfig (AGENT_MAX_REGENERATIONS default 2 clamp 0-3;
+// AGENT_MAX_REPLANS default 1 clamp 0-2). Worst case with defaults: 2 planner
+// calls, retrieval twice, and up to 4 generation+verification passes — bounded
+// because both counters only ever increase. Exported for tests;
+// MAX_REGENERATIONS is kept as a config-backed alias for existing importers.
+export const MAX_REGENERATIONS = agentConfig.maxRegenerations;
 
 export function routeAfterVerification(
   state: AgentStateType
-): "proceed" | "regenerate" | "fallback" {
+): "proceed" | "regenerate" | "replan" | "fallback" {
   if (state.verificationResult?.approved) return "proceed";
   // No verdict at all means verification itself failed; regenerating would be
   // guesswork, so take the safe branch rather than loop.
   if (!state.verificationResult) return "fallback";
-  return state.regenerationAttempts < MAX_REGENERATIONS ? "regenerate" : "fallback";
+  if (
+    state.verificationResult.needsMoreContext &&
+    state.replanAttempts < agentConfig.maxReplans
+  ) {
+    return "replan";
+  }
+  return state.regenerationAttempts < agentConfig.maxRegenerations
+    ? "regenerate"
+    : "fallback";
 }
 
 // Verification is the only node whose OUTPUT decides routing, so it is
@@ -63,6 +92,23 @@ export function buildAgentGraph(overrides: GraphOverrides = {}) {
   const verification = overrides.verificationNode ?? verificationAgentNode;
   // Node names must not collide with state channel names.
   return new StateGraph(AgentState)
+    .addNode(
+      "input_guardrail",
+      // Deterministic input screen, now a traced pipeline stage. A block is a
+      // SUCCESSFUL guardrail action, but it is traced as "degraded" rather than
+      // "ok" so blocked runs are loud in the trace without claiming the node
+      // itself broke.
+      traced("input_guardrail", "guardrail", inputGuardrailNode, (p) => {
+        const g = p.guardrail;
+        return g?.blocked
+          ? {
+              status: "degraded",
+              summary: `blocked: ${g.reason} (in ${g.where})`,
+              detail: { blocked: true, reason: g.reason, where: g.where },
+            }
+          : { summary: "clean", detail: { blocked: false } };
+      })
+    )
     .addNode(
       "resolve_query",
       // Context-aware query resolution: rewrites a follow-up into a standalone
@@ -81,23 +127,48 @@ export function buildAgentGraph(overrides: GraphOverrides = {}) {
     )
     .addNode(
       "extract_intent",
-      traced("extract_intent", "intent", intentNode, (p) => ({
-        summary: `intent: ${p.intent}`,
-        detail: { intent: p.intent },
-      }))
+      traced("extract_intent", "intent", intentNode, (p, s) => {
+        // SHADOW-MODE lane comparison: record what the slots WOULD decide next
+        // to what the regex gates DO decide, so the slots-primary rollout is a
+        // data-driven flip instead of a leap. Behavior is unchanged — the gates
+        // still govern; this detail is the evidence for switching.
+        const shadow = p.intentSlots
+          ? shadowCompare(s.query, { intent: p.intent ?? "other", slots: p.intentSlots, degraded: false })
+          : undefined;
+        return {
+          status: p.intentSlots ? "ok" : "degraded",
+          summary:
+            `intent: ${p.intent}` +
+            (p.intentSlots ? "" : " | slot extraction unavailable (label-only fallback)") +
+            (shadow && !shadow.agree ? " | shadow lanes DISAGREE with regex gates" : ""),
+          detail: {
+            intent: p.intent,
+            slots: p.intentSlots,
+            shadowLanes: shadow,
+          },
+        };
+      })
     )
     .addNode(
       "planner",
-      traced("planner", "plan", plannerNode, (p) => {
+      traced("planner", "plan", plannerNode, (p, s) => {
         // The planner is fault-tolerant: on LLM/parse failure it falls back to a
         // gate-safe regex plan. That fallback is a DEGRADED run, not a successful
         // one — `degraded` is now an explicit field rather than something to be
         // inferred from a reasoning string.
         const ep = p.executionPlan;
         const vetoed = ep?.riskChecks.filter((r) => r.action === "veto") ?? [];
+        // Second pass: verification sent the run back for more evidence. Same
+        // idiom as the recommendation summarizer's isRegen — the loop must be
+        // legible in the trace. Re-typed "regeneration" (the loop vocabulary):
+        // a replan is the plan stage run again, not a new kind of stage.
+        const isReplan = (p.replanAttempts ?? 0) > s.replanAttempts;
         return {
+          type: isReplan ? "regeneration" : "plan",
           status: ep?.degraded ? "degraded" : "ok",
-          summary: `goal: ${ep?.goal ?? "(none)"} | sections: ${p.plan?.sections.join(", ") ?? "(none)"}`,
+          summary:
+            (isReplan ? "RE-PLANNED after verification (insufficient evidence) — " : "") +
+            `goal: ${ep?.goal ?? "(none)"} | sections: ${p.plan?.sections.join(", ") ?? "(none)"}`,
           detail: {
             goal: ep?.goal,
             sections: p.plan?.sections,
@@ -109,6 +180,9 @@ export function buildAgentGraph(overrides: GraphOverrides = {}) {
             planIssues: ep?.planIssues ?? [],
             degraded: ep?.degraded,
             reasoning: ep?.reasoning,
+            // On a replan pass: what evidence the previous pass was missing.
+            replanned: isReplan || undefined,
+            missingContext: isReplan ? p.plannerFeedback?.missingContext : undefined,
           },
         };
       })
@@ -223,6 +297,9 @@ export function buildAgentGraph(overrides: GraphOverrides = {}) {
             // the only place a reviewer can see what the gate actually caught.
             unsupportedClaims: v?.unsupportedClaims ?? [],
             issues: v?.issues ?? [],
+            // The re-planning signal: rejection because the EVIDENCE was thin,
+            // not because the draft was wrong.
+            needsMoreContext: v?.needsMoreContext ?? false,
           },
         };
       })
@@ -277,14 +354,20 @@ export function buildAgentGraph(overrides: GraphOverrides = {}) {
     )
     .addNode(
       "safe_fallback",
-      traced("safe_fallback", "regeneration", safeFallbackNode, () => ({
+      traced("safe_fallback", "regeneration", safeFallbackNode, (_p, s) => ({
         status: "degraded",
-        summary: "rejected twice — free text replaced with a safe summary; verified sections kept",
+        summary: `rejected after ${s.regenerationAttempts + 1} attempt(s) — free text replaced with a safe summary; verified sections kept`,
       }))
     )
     // Terminal trace flush. Untraced by design — see nodes/persistTrace.ts.
     .addNode("persist_trace", persistTraceNode)
-    .addEdge(START, "resolve_query")
+    .addEdge(START, "input_guardrail")
+    // Blocked input never reaches a model or the DB tools; the run records
+    // itself (persist_trace) and ends. Clean input proceeds unchanged.
+    .addConditionalEdges("input_guardrail", routeAfterGuardrail, {
+      ok: "resolve_query",
+      blocked: "persist_trace",
+    })
     // The Profile Agent runs BEFORE intent extraction and planning: who the user
     // is is context FOR both, not a consequence of them. It is deterministic and
     // depends on nothing but userId, so moving it earlier costs nothing.
@@ -295,12 +378,17 @@ export function buildAgentGraph(overrides: GraphOverrides = {}) {
     .addEdge("career_data_agent", "recommendation_agent")
     .addEdge("recommendation_agent", "verification_agent")
     // THE LOOP. Verification can send a draft back instead of merely correcting
-    // it and shipping. Exactly one retry: routeAfterVerification is the guard,
-    // and it is a pure function of state so every branch is unit-testable.
+    // it and shipping. At most agentConfig.maxRegenerations retries:
+    // routeAfterVerification is the guard, and it is a pure function of state so
+    // every branch is unit-testable.
     // Note the retry edge targets recommendation_agent, NOT career_data_agent —
     // retrieval is not repeated.
     .addConditionalEdges("verification_agent", routeAfterVerification, {
       regenerate: "recommendation_agent",
+      // Insufficient evidence: back to the planner for a full re-plan +
+      // re-retrieval pass (unlike regenerate, retrieval IS repeated — that is
+      // the point).
+      replan: "planner",
       fallback: "safe_fallback",
       proceed: "update_memory",
     })

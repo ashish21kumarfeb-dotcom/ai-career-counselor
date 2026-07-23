@@ -1,8 +1,11 @@
-// Safe fallback — the terminal branch when a draft is rejected TWICE.
+// Safe fallback — the terminal branch when a draft is rejected on every allowed
+// attempt (the first pass plus up to agentConfig.maxRegenerations retries).
 //
-// The loop is: reject -> regenerate once with feedback -> if still rejected, stop
-// trying. At that point the workflow has been told twice that it cannot write
-// acceptable free text for this query, so it stops asserting and says so.
+// The loop is: reject -> regenerate with feedback (up to the configured limit;
+// a rejection for insufficient evidence may instead route back to the planner
+// for a re-plan + re-retrieval pass, also bounded) -> if still rejected, stop
+// trying. At that point the workflow has been told repeatedly that it cannot
+// write acceptable free text for this query, so it stops asserting and says so.
 //
 // What survives: the verified DB-backed sections (agencies/resources/courses).
 // Those were never LLM-authored — they are copied from Career Data rows — so a
@@ -14,7 +17,7 @@
 // two rejections the honest signal is "we could not produce grounded prose for
 // this", and shipping the second gutted attempt as if it were an answer would be
 // the overclaim this workflow exists to avoid. It is rare by construction: it
-// needs two consecutive rejections.
+// needs consecutive rejections on every allowed attempt.
 //
 // TWO DISTINCT FAILURES, TWO DISTINCT MESSAGES. The safe summary above is the right
 // thing to say when a real draft was written twice and rejected twice — the workflow

@@ -4,6 +4,8 @@
 // results, generated sections, verification, and logId are added in later steps.
 import { Annotation } from "@langchain/langgraph";
 import type { Intent } from "../ai/intent";
+import type { IntentSlots } from "../ai/extractIntent";
+import type { ScreenResult } from "../chat/screen";
 import type { ChatTurn } from "../ai/resolveQuery";
 import type { getProfileByUserId } from "../profile/queries";
 import type { MemoryEntry } from "../memory/queries";
@@ -96,8 +98,18 @@ export const AgentState = Annotation.Root({
     default: () => [],
   }),
 
+  // Result of the input guardrail (the graph's first node). undefined until the
+  // node runs; { blocked: false } on a clean pass. The route maps blocked: true
+  // to its 400 response — the graph records the block, the route reports it.
+  guardrail: Annotation<ScreenResult | undefined>({ reducer: lastValue, default: () => undefined }),
+
   // Derived context.
   intent: Annotation<Intent>({ reducer: lastValue, default: () => "other" }),
+  // Structured slots from the intent extraction (extractIntent). undefined when
+  // extraction was degraded/absent — the signal for consumers to fall back to
+  // the regex gates. The `intent` label above keeps its exact shape (varchar
+  // columns + UI); slots are additive.
+  intentSlots: Annotation<IntentSlots | undefined>({ reducer: lastValue, default: () => undefined }),
   profile: Annotation<ProfileRow | undefined>({ reducer: lastValue, default: () => undefined }),
   memory: Annotation<MemoryEntry[]>({ reducer: lastValue, default: () => [] }),
   ragDocs: Annotation<RetrievedDocument[]>({ reducer: lastValue, default: () => [] }),
@@ -143,10 +155,25 @@ export const AgentState = Annotation.Root({
   verificationResult: Annotation<VerificationAgentOutput | undefined>({ reducer: lastValue, default: () => undefined }),
 
   // How many times the Recommendation Agent has REGENERATED after a rejection.
-  // 0 on the first pass. The router allows exactly one retry, so this never
-  // exceeds 1; it is the loop's termination guard and must be incremented by a
-  // node (a conditional-edge function returns a route, it cannot write state).
+  // 0 on the first pass. The router allows at most agentConfig.maxRegenerations
+  // retries (see config.ts), so this never exceeds that bound; it is the loop's
+  // termination guard and must be incremented by a node (a conditional-edge
+  // function returns a route, it cannot write state).
   regenerationAttempts: Annotation<number>({ reducer: lastValue, default: () => 0 }),
+
+  // How many times verification has sent the run BACK TO THE PLANNER (a full
+  // re-plan + re-retrieval + re-generation pass) because the evidence was
+  // insufficient. Bounded by agentConfig.maxReplans; incremented by plannerNode
+  // (same reasoning as regenerationAttempts — an edge cannot write state).
+  replanAttempts: Annotation<number>({ reducer: lastValue, default: () => 0 }),
+
+  // Feedback for a re-planned pass: why the previous plan's evidence was judged
+  // insufficient. Written by plannerNode when it detects a replan pass, read by
+  // its prompt builder. Never cleared — its presence together with
+  // replanAttempts > 0 is what marks a run as re-planned.
+  plannerFeedback: Annotation<
+    { missingContext: string[]; previousSections: string[]; issues: string[] } | undefined
+  >({ reducer: lastValue, default: () => undefined }),
 });
 
 export type AgentStateType = typeof AgentState.State;

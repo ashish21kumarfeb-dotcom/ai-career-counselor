@@ -39,3 +39,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# offline evaluation harness (eval/) — generated artifacts only; the harness
+# code, requirements, and eval/baselines/ stay committed
+eval/.venv/
+eval/datasets/
+eval/reports/
+__pycache__/
+.deepeval/

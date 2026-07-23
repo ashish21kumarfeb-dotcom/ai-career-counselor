@@ -56,6 +56,10 @@ function makeState(over: Partial<AgentStateType>): AgentStateType {
     recommendation: undefined,
     verificationResult: undefined,
     regenerationAttempts: 0,
+    guardrail: undefined,
+    intentSlots: undefined,
+    replanAttempts: 0,
+    plannerFeedback: undefined,
     ...over,
   };
 }
@@ -268,16 +272,17 @@ if (!process.env.DATABASE_URL) {
       check("trace persisted with events", trace.length > 0, `len=${trace.length}`);
       check(
         "trace covers every traced node",
-        ["extract_intent", "planner", "profile_agent", "career_data_agent", "recommendation_agent", "verification_agent", "update_memory", "evaluate", "log_turn"].every((s) => steps.includes(s)),
+        ["input_guardrail", "extract_intent", "planner", "profile_agent", "career_data_agent", "recommendation_agent", "verification_agent", "update_memory", "evaluate", "log_turn"].every((s) => steps.includes(s)),
         JSON.stringify(steps)
       );
       check("persist_trace does not trace itself", !steps.includes("persist_trace"));
       check("seq is dense and ordered", trace.every((e, i) => e.seq === i), JSON.stringify(trace.map((e) => e.seq)));
-      // resolve_query is the graph's entry node (it rewrites a follow-up into a
-      // standalone question before intent extraction), so it is the first event.
+      // input_guardrail is the graph's entry node (deterministic input screen),
+      // followed by resolve_query (which rewrites a follow-up into a standalone
+      // question before intent extraction).
       check(
         "events are in execution order",
-        steps[0] === "resolve_query" && steps[steps.length - 1] === "log_turn",
+        steps[0] === "input_guardrail" && steps[1] === "resolve_query" && steps[steps.length - 1] === "log_turn",
         JSON.stringify(steps)
       );
       check("every event has a summary", trace.every((e) => typeof e.summary === "string" && e.summary.length > 0));

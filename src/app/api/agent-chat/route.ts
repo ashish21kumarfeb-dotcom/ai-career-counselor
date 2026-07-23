@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { getSession } from "../../../lib/auth/session";
 import { chatSchema } from "../../../lib/chat/validation";
-import { screenChatInput, SCREEN_BLOCK_MESSAGE } from "../../../lib/chat/screen";
+import { SCREEN_BLOCK_MESSAGE } from "../../../lib/chat/screen";
 import { agentGraph } from "../../../lib/agent/graph";
 import { saveRun } from "../../../lib/agent/trace/queries";
 import { consumeRateLimit, userSubject, CHAT_LIMIT } from "../../../lib/rate-limit/queries";
@@ -67,24 +67,13 @@ export async function POST(request: Request) {
     );
   }
 
-  // Input screening. Placed after schema validation (so the fields exist) and
-  // before the graph (so a blocked request costs nothing downstream). Logged
-  // rather than silently dropped — a screen whose hits are invisible cannot be
-  // tuned, and a rise in blocks is itself a signal worth seeing.
-  //
-  // Only the message is screened now. It used to screen the client-supplied
-  // history too, because a payload could be planted in a fabricated prior turn.
-  // History is no longer supplied: every user turn in the window passed through
-  // this exact check before it was stored, and every assistant turn is this
-  // pipeline's own verified output. The check moved from the read to the write,
-  // where it only has to run once.
-  const screen = screenChatInput(parsed.data.message);
-  if (screen.blocked) {
-    console.warn(
-      `agent-chat input screened: reason=${screen.reason} where=${screen.where} user=${session.userId}`
-    );
-    return NextResponse.json({ error: SCREEN_BLOCK_MESSAGE }, { status: 400 });
-  }
+  // Input screening now happens INSIDE the graph (the input_guardrail node), so
+  // every block is a traced, persisted agent_runs row instead of an invisible
+  // route-level early return. The graph is the single source of truth; this
+  // route reads the guardrail result off the final state below and maps a block
+  // to the same 400 it always returned. The price is that a blocked request now
+  // costs graph startup and one trace write instead of a pure fast-400 — that
+  // observability is the point; the run is still LLM-free.
 
   // Resolve the thread this message belongs to.
   //
@@ -117,21 +106,19 @@ export async function POST(request: Request) {
   // appear in its own history, or resolve_query would try to resolve a question
   // against itself.
   //
-  // Best-effort on both sides: a history read that fails degrades to first-turn
-  // behaviour (the query reaches the pipeline unresolved) and a turn that fails to
-  // store costs the next follow-up its context. Neither is worth failing a request
+  // Best-effort: a history read that fails degrades to first-turn behaviour
+  // (the query reaches the pipeline unresolved). Not worth failing a request
   // the user can still be answered.
+  //
+  // The user turn itself is stored AFTER the graph clears the input guardrail
+  // (below) — a blocked message must never land in conversation_messages,
+  // because history is deliberately not re-screened on read: the invariant is
+  // that every stored turn already passed the screen at write time.
   let history: Awaited<ReturnType<typeof getRecentTurns>> = [];
   try {
     history = await getRecentTurns(conversationId);
   } catch (error) {
     console.error("agent-chat history read failed; continuing without it:", error);
-  }
-
-  try {
-    await appendMessage({ conversationId, role: "user", content: parsed.data.message });
-  } catch (error) {
-    console.error("agent-chat user turn write failed:", error);
   }
 
   // Correlation id for the whole run. Minted here (not defaulted inside the
@@ -162,6 +149,30 @@ export async function POST(request: Request) {
     );
 
     await flushUsage(usageRows);
+
+    // The guardrail verdict, recorded by the graph (and already persisted to
+    // agent_runs as a "blocked" run). Same response contract as the old
+    // route-level screen: 400 with a generic message that names no rule. The
+    // message was never stored (see above), so nothing needs undoing here — at
+    // most an empty conversation row remains for a blocked first message, which
+    // is accepted as the cost of keeping the failure path write-free.
+    if (result.guardrail?.blocked) {
+      console.warn(
+        `agent-chat input screened: reason=${result.guardrail.reason} where=${result.guardrail.where} user=${session.userId} run=${runId}`
+      );
+      return NextResponse.json({ error: SCREEN_BLOCK_MESSAGE }, { status: 400 });
+    }
+
+    // The input cleared the guardrail: NOW store the user's turn, preserving the
+    // invariant that every row in conversation_messages passed the screen.
+    // Best-effort — a turn that fails to store costs the next follow-up its
+    // context, which is not worth failing a request the user can still be
+    // answered.
+    try {
+      await appendMessage({ conversationId, role: "user", content: parsed.data.message });
+    } catch (error) {
+      console.error("agent-chat user turn write failed:", error);
+    }
 
     // The full render envelope — assembled ONCE and used for two purposes below:
     // returned to the client to drive the live Career Navigator, and persisted as

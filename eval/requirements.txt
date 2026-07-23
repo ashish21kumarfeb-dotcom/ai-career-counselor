@@ -1,0 +1,10 @@
+# Offline evaluation harness (RAGAS). Python >= 3.11.
+# Setup (Windows, from the repo root):
+#   cd eval
+#   python -m venv .venv
+#   .venv\Scripts\activate
+#   pip install -r requirements.txt
+ragas>=0.2.6
+datasets>=2.19
+langchain-openai>=0.2
+langchain-voyageai>=0.1

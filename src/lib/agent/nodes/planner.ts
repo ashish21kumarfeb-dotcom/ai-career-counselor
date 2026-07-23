@@ -53,9 +53,37 @@ Rules:
 - Request a tool only if a section you planned needs it. searchDocuments is always available for grounding.
 - Agents: this workflow runs ALL FOUR on every request, so list all four every time — profile (loads profile + memory), career_data (retrieval), recommendation (writes the answer), verification (checks it). Omitting one does not skip it; it is forced back in and recorded as a planning error.`;
 
-async function proposePlan(state: AgentStateType): Promise<PlannerProposal> {
-  const userInput = `User query: ${JSON.stringify(state.query)}
-Detected intent: ${state.intent}`;
+// The re-planning brief appended to the prompt on a replan pass. Deterministic,
+// built from the verification verdict — same reasoning as buildRecommendedFix:
+// asking a model to explain another model's failure adds nothing the issue list
+// does not already say.
+function replanBrief(feedback: NonNullable<AgentStateType["plannerFeedback"]>): string {
+  return [
+    "",
+    `RE-PLANNING: the previous plan (sections: ${feedback.previousSections.join(", ") || "none"}) produced an answer that verification rejected because the available evidence was insufficient.`,
+    feedback.missingContext.length > 0
+      ? `Missing evidence: ${feedback.missingContext.join("; ")}.`
+      : "",
+    "Plan again. Prefer broader retrieval — sections and tools that would fetch the missing evidence.",
+    feedback.issues.length > 0 ? `Verification issues: ${feedback.issues.join("; ")}.` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+async function proposePlan(
+  state: AgentStateType,
+  feedback?: AgentStateType["plannerFeedback"]
+): Promise<PlannerProposal> {
+  // Structured slots (when extraction succeeded) give the planner named
+  // entities and behavioural signals instead of making it re-derive them from
+  // the raw query. Advisory context only — the gates still govern the plan.
+  const slotsLine = state.intentSlots
+    ? `\nExtracted slots: ${JSON.stringify(state.intentSlots)}`
+    : "";
+  const userInput =
+    `User query: ${JSON.stringify(state.query)}
+Detected intent: ${state.intent}` + slotsLine + (feedback ? replanBrief(feedback) : "");
 
   const completion = await createCompletion("planner", {
     model: CHAT_MODEL,
@@ -74,11 +102,27 @@ Detected intent: ${state.intent}`;
 export async function plannerNode(
   state: AgentStateType
 ): Promise<Partial<AgentStateType>> {
+  // A rejected verdict with needsMoreContext sitting on state means the router
+  // sent the run BACK here: this pass IS the replan. Mirrors the increment
+  // pattern in recommendationAgent.ts — a conditional edge cannot write state,
+  // so the node the edge targets owns the counter.
+  const isReplan =
+    !!state.verificationResult &&
+    !state.verificationResult.approved &&
+    !!state.verificationResult.needsMoreContext;
+  const plannerFeedback = isReplan
+    ? {
+        missingContext: state.verificationResult?.missingContextHints ?? [],
+        previousSections: state.plan?.sections ?? [],
+        issues: state.verificationResult?.issues ?? [],
+      }
+    : state.plannerFeedback;
+
   let proposal: PlannerProposal;
   let degraded = false;
 
   try {
-    proposal = await proposePlan(state);
+    proposal = await proposePlan(state, plannerFeedback);
   } catch (error) {
     console.error("Planner LLM failed; using fallback plan:", error);
     proposal = fallbackProposal(state.query);
@@ -86,5 +130,19 @@ export async function plannerNode(
   }
 
   const { executionPlan, plan } = finalizeExecutionPlan(proposal, state.query, degraded);
-  return { executionPlan, plan };
+  if (!isReplan) return { executionPlan, plan };
+
+  return {
+    executionPlan,
+    plan,
+    replanAttempts: state.replanAttempts + 1,
+    plannerFeedback,
+    // CRITICAL: clear the stale rejected verdict. The re-planned pass's
+    // recommendation run is a FIRST DRAFT against a new plan, not a
+    // regeneration — leaving the old verdict on state would make
+    // recommendationAgent treat it as rejection feedback and wrongly increment
+    // regenerationAttempts. The rejection's substance survives in
+    // plannerFeedback, which the new plan was built from.
+    verificationResult: undefined,
+  };
 }

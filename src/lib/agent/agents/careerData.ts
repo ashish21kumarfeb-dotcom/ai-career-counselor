@@ -264,15 +264,26 @@ export async function runCareerDataAgent(
   // per-lane type. The log node still reads the legacy state.toolResults channel,
   // so this does not yet change ai_recommendations.sources_used — it keeps the
   // envelope honest about what actually grounded the answer.
+  // Bounded text sample of what each source contributed, carried on the ref so
+  // offline evaluation can reconstruct grounding contexts from the persisted
+  // sources_used alone (RAG doc content is not persisted anywhere else per-run).
+  const excerpt = (text: string | null | undefined): string | undefined => {
+    const t = text?.trim();
+    return t ? t.slice(0, 400) : undefined;
+  };
   const externalSourceRefs = [
-    ...roadmaps.map((r) => ({ id: r.url, type: "external_roadmap", sourceUrl: r.url })),
-    ...marketSignals.map((r) => ({ id: r.url, type: "external_market_signal", sourceUrl: r.url })),
-    ...industryArticles.map((r) => ({ id: r.url, type: "external_industry_article", sourceUrl: r.url })),
-    ...hiringCompanies.map((r) => ({ id: r.url, type: "external_hiring_company", sourceUrl: r.url })),
+    ...roadmaps.map((r) => ({ id: r.url, type: "external_roadmap", sourceUrl: r.url, excerpt: excerpt(r.snippet) })),
+    ...marketSignals.map((r) => ({ id: r.url, type: "external_market_signal", sourceUrl: r.url, excerpt: excerpt(r.snippet) })),
+    ...industryArticles.map((r) => ({ id: r.url, type: "external_industry_article", sourceUrl: r.url, excerpt: excerpt(r.snippet) })),
+    ...hiringCompanies.map((r) => ({ id: r.url, type: "external_hiring_company", sourceUrl: r.url, excerpt: excerpt(r.snippet) })),
   ];
   const sourcesUsed = [
-    ...agencyRows.map((a) => ({ id: a.id, type: "agency", sourceUrl: a.sourceUrl })),
-    ...resourceDocs.map((d) => ({ id: d.id, type: d.type, sourceUrl: d.sourceUrl })),
+    ...agencyRows.map((a) => ({ id: a.id, type: "agency", sourceUrl: a.sourceUrl, excerpt: excerpt([a.name, a.location, a.services].filter(Boolean).join(" — ")) })),
+    ...resourceDocs.map((d) => ({ id: d.id, type: d.type, sourceUrl: d.sourceUrl, excerpt: excerpt(d.content) })),
+    // RAG grounding docs, previously omitted: they back the free text more than
+    // any other source, and without them the persisted sources understate what
+    // grounded the answer.
+    ...ragDocs.map((d) => ({ id: d.id, type: "rag_doc", sourceUrl: d.sourceUrl, excerpt: excerpt(d.content) })),
     ...externalSourceRefs,
   ];
 

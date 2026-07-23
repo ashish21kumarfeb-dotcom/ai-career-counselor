@@ -3,7 +3,6 @@
 // stubbed verdicts so no LLM or DB is touched.
 // Run: npm run test:regen
 import "dotenv/config";
-import { routeAfterVerification, MAX_REGENERATIONS } from "../src/lib/agent/graph";
 import { deriveFinalStatus } from "../src/lib/agent/nodes/persistTrace";
 import { safeFallbackNode } from "../src/lib/agent/nodes/safeFallback";
 import {
@@ -15,6 +14,15 @@ import { verificationAgentOutputSchema } from "../src/lib/agent/agents/contracts
 import type { AgentStateType } from "../src/lib/agent/state";
 import type { VerificationAgentOutput } from "../src/lib/agent/agents/contracts";
 import type { ResponseSections } from "../src/lib/agent/schema";
+
+// Pin the retry budget to 1 BEFORE the graph module (and its config singleton)
+// loads, so the integration blocks stay cheap (2 generation passes, not N+1).
+// `??=` respects an explicit override from the environment/.env. This is why the
+// graph is imported dynamically below rather than statically above — static
+// imports would hoist past this assignment.
+process.env.AGENT_MAX_REGENERATIONS ??= "1";
+const { routeAfterVerification, MAX_REGENERATIONS } = await import("../src/lib/agent/graph");
+const { readAgentConfig } = await import("../src/lib/agent/config");
 
 let passed = 0;
 let failed = 0;
@@ -44,27 +52,42 @@ function makeState(over: Partial<AgentStateType>): AgentStateType {
     sections: undefined, verification: undefined, evaluation: undefined,
     profileAgent: undefined, careerData: undefined, recommendation: undefined,
     verificationResult: undefined, regenerationAttempts: 0,
+    guardrail: undefined, intentSlots: undefined, replanAttempts: 0, plannerFeedback: undefined,
     ...over,
   };
 }
 
-console.log("\n== router: exactly one retry, and it terminates ==");
+console.log("\n== config: retry budget is clamped, defaulted, and env-driven ==");
+{
+  check("missing env -> default 2", readAgentConfig({}).maxRegenerations === 2);
+  check("explicit 0 is honored (loop disabled)", readAgentConfig({ AGENT_MAX_REGENERATIONS: "0" }).maxRegenerations === 0);
+  check("over-range clamped to 3", readAgentConfig({ AGENT_MAX_REGENERATIONS: "7" }).maxRegenerations === 3);
+  check("negative clamped to 0", readAgentConfig({ AGENT_MAX_REGENERATIONS: "-2" }).maxRegenerations === 0);
+  check("non-numeric -> default 2", readAgentConfig({ AGENT_MAX_REGENERATIONS: "abc" }).maxRegenerations === 2);
+  check("maxReplans defaults to 1", readAgentConfig({}).maxReplans === 1);
+  // This test pinned the budget to 1 before the graph loaded (see the import
+  // block above); the exported alias must reflect the configured value.
+  check("MAX_REGENERATIONS reflects the pinned env", MAX_REGENERATIONS === 1, String(MAX_REGENERATIONS));
+}
+
+console.log("\n== router: bounded retries, and it terminates ==");
 {
   check("approved -> proceed", routeAfterVerification(makeState({ verificationResult: verdict({ approved: true }) })) === "proceed");
-  check("rejected, no retry yet -> regenerate", routeAfterVerification(makeState({ verificationResult: verdict({ approved: false }), regenerationAttempts: 0 })) === "regenerate");
-  check("rejected, already retried -> fallback", routeAfterVerification(makeState({ verificationResult: verdict({ approved: false }), regenerationAttempts: 1 })) === "fallback");
+  check("rejected, retries remaining -> regenerate", routeAfterVerification(makeState({ verificationResult: verdict({ approved: false }), regenerationAttempts: 0 })) === "regenerate");
+  check("rejected, budget exhausted -> fallback", routeAfterVerification(makeState({ verificationResult: verdict({ approved: false }), regenerationAttempts: MAX_REGENERATIONS })) === "fallback");
   check("approved AFTER a retry -> proceed", routeAfterVerification(makeState({ verificationResult: verdict({ approved: true }), regenerationAttempts: 1 })) === "proceed");
   // No verdict at all: verification itself broke. Regenerating would be guesswork.
   check("no verdict -> fallback (never loops on a missing verdict)", routeAfterVerification(makeState({ verificationResult: undefined })) === "fallback");
-  check("MAX_REGENERATIONS is 1 (spec: regenerate once)", MAX_REGENERATIONS === 1);
 }
 {
   // Termination: whatever the attempt count, a rejected run must eventually stop.
+  // Exactly the configured number of attempt counts (0..N-1) may route to
+  // regenerate; every count at or past the budget must fall back.
   let loops = 0;
-  for (let attempts = 0; attempts <= 5; attempts++) {
+  for (let attempts = 0; attempts <= MAX_REGENERATIONS + 5; attempts++) {
     if (routeAfterVerification(makeState({ verificationResult: verdict({ approved: false }), regenerationAttempts: attempts })) === "regenerate") loops++;
   }
-  check("only ONE attempt count can route to regenerate", loops === 1, `loops=${loops}`);
+  check(`exactly ${MAX_REGENERATIONS} attempt count(s) route to regenerate`, loops === MAX_REGENERATIONS, `loops=${loops}`);
 }
 
 console.log("\n== finalStatus reports the ending honestly ==");

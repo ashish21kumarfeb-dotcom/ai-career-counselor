@@ -333,19 +333,38 @@ function applyUnsafeFallback(sections: ResponseSections, plan: AgentPlan): void 
 }
 
 // --- Layer 2: soft LLM check (injectable) --------------------------------------
-export type SoftCheckResult = { available: boolean; grounded: boolean; safe: boolean; notes: string };
+export type SoftCheckResult = {
+  available: boolean;
+  grounded: boolean;
+  safe: boolean;
+  notes: string;
+  // True when the draft is ungrounded BECAUSE the sources lack the needed
+  // evidence, not because the draft contradicts them. Feeds the re-planning
+  // signal; optional so injected test stubs stay valid.
+  missingContext?: boolean;
+  // What was missing, in the check's own words.
+  missing?: string[];
+};
 export type SoftCheckFn = (
   query: string,
   sections: ResponseSections,
   careerData: CareerDataAgentOutput
 ) => Promise<SoftCheckResult>;
 
-const verifySchema = z.object({ grounded: z.boolean(), safe: z.boolean(), notes: z.string() });
+const verifySchema = z.object({
+  grounded: z.boolean(),
+  safe: z.boolean(),
+  notes: z.string(),
+  // Optional: an older-style completion that omits them still validates.
+  missing_context: z.boolean().optional(),
+  missing: z.array(z.string()).optional(),
+});
 
-const VERIFY_PROMPT = `You are a verification/reflection agent for an AI career counselor. Review the draft answer against the user's question and the sources that were available. Respond with a single JSON object: {"grounded": bool, "safe": bool, "notes": "one short sentence"}.
+const VERIFY_PROMPT = `You are a verification/reflection agent for an AI career counselor. Review the draft answer against the user's question and the sources that were available. Respond with a single JSON object: {"grounded": bool, "safe": bool, "missing_context": bool, "missing": ["..."], "notes": "one short sentence"}.
 - grounded = false if the draft states specific facts, agencies, courses, or links that are NOT supported by the available sources, or presents a suggested roadmap as if it were verified data.
 - safe = false if it guarantees jobs/interviews/salaries, invents agencies, or gives overconfident/biased advice.
-- Otherwise both true. Keep notes short.`;
+- missing_context = true ONLY if the draft is ungrounded because the available sources do not contain the evidence the question needs (thin or absent sources) — NOT when the draft invents things the sources contradict. When true, list the missing evidence briefly in "missing"; otherwise use [].
+- Otherwise grounded/safe are true and missing_context is false. Keep notes short.`;
 
 // Default soft check: a real Groq call. Fault-tolerant — any error or invalid output
 // returns available:false (NOT a permissive grounded/safe:true).
@@ -406,7 +425,14 @@ export async function runSoftCheck(
     if (!parsed.success) {
       return { available: false, grounded: false, safe: false, notes: "Soft verification output invalid; grounding/safety not confirmed." };
     }
-    return { available: true, grounded: parsed.data.grounded, safe: parsed.data.safe, notes: parsed.data.notes };
+    return {
+      available: true,
+      grounded: parsed.data.grounded,
+      safe: parsed.data.safe,
+      notes: parsed.data.notes,
+      missingContext: parsed.data.missing_context ?? false,
+      missing: parsed.data.missing ?? [],
+    };
   } catch (error) {
     console.error("Soft verification unavailable:", error);
     return { available: false, grounded: false, safe: false, notes: "Soft verification unavailable (LLM error); grounding/safety not confirmed." };
@@ -492,6 +518,23 @@ export async function runVerificationAgent(
     !(softCheckAvailable && !soft.safe) &&
     !(softCheckAvailable && !soft.grounded);
 
+  // The re-planning signal, set CONSERVATIVELY: the soft check must have run
+  // and flagged missing context, AND the retrieval evidence must be corroborated
+  // thin by deterministic facts the Career Data agent already reported (no RAG
+  // docs, or self-reported gaps). An LLM-only judgment must not unilaterally
+  // buy a full re-plan + re-retrieval pass. Never set on approval — an approved
+  // answer needs nothing. Hard sanitization issues alone (invented providers)
+  // stay on the regenerate path: the remedy there is rewriting, not re-fetching
+  // the same evidence.
+  const evidenceThin =
+    input.careerData.ragDocs.length === 0 ||
+    (input.careerData.missingDataNotes?.length ?? 0) > 0;
+  const needsMoreContext =
+    !approved && softCheckAvailable && soft.missingContext === true && evidenceThin;
+  const missingContextHints = needsMoreContext
+    ? [...(soft.missing ?? []), ...(input.careerData.missingDataNotes ?? [])]
+    : undefined;
+
   const noteParts: string[] = [approved ? "Passed verification." : "Verification applied corrections."];
   if (!softCheckAvailable) noteParts.push("Soft grounding/safety check was not available — not confirmed.");
   else if (soft.notes) noteParts.push(soft.notes);
@@ -510,6 +553,9 @@ export async function runVerificationAgent(
     // The exact figures the grounding policy could not trace to evidence. Surfaced
     // so the trace can show WHICH number failed rather than only that one did.
     unsupportedClaims,
+    // Re-planning signal + hints (undefined unless the conditions above held).
+    needsMoreContext: needsMoreContext || undefined,
+    missingContextHints,
     finalSections,
   };
 

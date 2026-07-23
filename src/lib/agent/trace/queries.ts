@@ -13,6 +13,7 @@ export type SaveRunInput = {
   userId: string;
   query: string;
   intent?: string;
+  intentSlots?: unknown;
   executionPlan?: unknown;
   trace: TraceEvent[];
   finalStatus: FinalStatus;
@@ -31,6 +32,7 @@ export async function saveRun(input: SaveRunInput) {
       userId: input.userId,
       query: input.query,
       intent: input.intent,
+      intentSlots: input.intentSlots,
       executionPlan: input.executionPlan,
       trace: input.trace,
       finalStatus: input.finalStatus,

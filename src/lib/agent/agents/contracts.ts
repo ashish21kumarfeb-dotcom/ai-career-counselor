@@ -39,6 +39,11 @@ export const sourceRefSchema = z.object({
   id: z.string(),
   type: z.string(),
   sourceUrl: z.string().nullable(),
+  // Bounded text sample (~400 chars) of what this source contributed. Optional
+  // (legacy rows/fixtures omit it); populated so offline evaluation
+  // (faithfulness metrics) can reconstruct the grounding contexts from
+  // ai_recommendations.sources_used alone instead of re-joining source tables.
+  excerpt: z.string().optional(),
 });
 
 // A normalized EXTERNAL search result (Tavily). Unlike the DB row shapes above,
@@ -265,6 +270,10 @@ export const verificationAgentOutputSchema = z.object({
   // `toolLatencyMs` above; runVerificationAgent always sets it (to [] when the
   // grounding policy found nothing to flag).
   unsupportedClaims: z.array(z.string()).optional(),
+  // Optional (same fixture-compat reasoning): the re-planning signal. See the
+  // interface below for the exact conditions under which it is set.
+  needsMoreContext: z.boolean().optional(),
+  missingContextHints: z.array(z.string()).optional(),
   finalSections: responseSectionsSchema,
 });
 
@@ -302,6 +311,16 @@ export interface VerificationAgentOutput {
   // The exact figures the deterministic grounding policy could not trace to any
   // retrieved evidence. Empty when nothing was flagged.
   unsupportedClaims?: string[];
+  // The RE-PLANNING signal: true only when the draft was rejected because the
+  // available sources do not contain the needed evidence (as opposed to the
+  // draft inventing things the sources contradict). Set conservatively — the
+  // soft LLM check must flag missing context AND the retrieval evidence must be
+  // corroborated thin (no RAG docs, or the Career Data agent self-reported
+  // gaps) — because an LLM-only judgment should not unilaterally double the
+  // run's cost with a full re-plan + re-retrieval pass. Never true on approval.
+  needsMoreContext?: boolean;
+  // What evidence was missing, for the planner's re-planning prompt.
+  missingContextHints?: string[];
   // The response after any sanitization (offending sections dropped / unsafe text
   // replaced). Equal to the input draftSections when nothing had to change.
   finalSections: ResponseSections;

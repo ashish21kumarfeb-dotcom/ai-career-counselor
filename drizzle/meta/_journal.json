@@ -134,6 +134,27 @@
       "when": 1784702653631,
       "tag": "0018_empty_groot",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1784785368686,
+      "tag": "0019_little_black_widow",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1784786023389,
+      "tag": "0020_black_shatterstar",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1784786155233,
+      "tag": "0021_tricky_triathlon",
+      "breakpoints": true
     }
   ]
 }

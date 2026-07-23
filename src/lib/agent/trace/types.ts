@@ -13,6 +13,7 @@
 // What produced the event. Mirrors the pipeline stages rather than node names so
 // the vocabulary survives a node rename.
 export const TRACE_EVENT_TYPES = [
+  "guardrail",
   "intent",
   "plan",
   "agent",
@@ -55,15 +56,22 @@ export type TraceEvent = {
 // safe-text fallback — precisely the overclaim this trace exists to prevent.
 //   approved    — passed verification clean.
 //   corrected   — hard issues sanitized out; corrected answer shipped.
-//   regenerated — rejected, regenerated once, then passed.        (Phase 3)
-//   fallback    — rejected twice; safe summary text shipped.      (Phase 3)
+//   regenerated — rejected, regenerated (>=1 retry), then passed.          (Phase 3)
+//   fallback    — rejected on every allowed attempt; safe summary shipped. (Phase 3)
 //   failed      — the run threw.
+//   blocked     — the input guardrail stopped the run at the door. No LLM call
+//                 was made and no answer was produced; the trace row IS the
+//                 record of the attempt.
+//   replanned   — verification judged the evidence insufficient, the run went
+//                 back to the planner (re-plan + re-retrieval), then passed.
 export const FINAL_STATUSES = [
   "approved",
   "corrected",
   "regenerated",
   "fallback",
   "failed",
+  "blocked",
+  "replanned",
 ] as const;
 export type FinalStatus = (typeof FINAL_STATUSES)[number];
 

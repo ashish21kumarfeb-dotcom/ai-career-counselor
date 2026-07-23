@@ -17,10 +17,14 @@ import type { AgentStateType } from "../state";
 // regeneration loop was used. Mirrors routeAfterVerification in graph.ts — if
 // that router changes, this must too, or the trace will misreport the ending.
 //
+//   blocked     — the input guardrail stopped the run; nothing downstream ran.
 //   failed      — verification never produced a verdict.
 //   approved    — passed first time.
-//   regenerated — was rejected, regenerated once, then passed.
-//   fallback    — still rejected after its retry; safe summary shipped.
+//   replanned   — verification sent the run back to the planner (re-plan +
+//                 re-retrieval), and the re-planned pass was approved. Wins over
+//                 "regenerated": it is the stronger, more expensive intervention.
+//   regenerated — was rejected, regenerated at least once, then passed.
+//   fallback    — still rejected after every allowed retry; safe summary shipped.
 //
 // `corrected` is NOT produced any more. It was the Phase 1 ending, when
 // rejection was terminal and the corrected answer shipped regardless; the loop
@@ -28,9 +32,15 @@ import type { AgentStateType } from "../state";
 // because Phase 1 rows still carry it (and Postgres cannot safely drop an in-use
 // enum value).
 export function deriveFinalStatus(state: AgentStateType): FinalStatus {
+  // Checked first: a blocked run has no verdict by construction and would
+  // otherwise misreport as "failed".
+  if (state.guardrail?.blocked) return "blocked";
   const v = state.verificationResult;
   if (!v) return "failed";
-  if (v.approved) return state.regenerationAttempts > 0 ? "regenerated" : "approved";
+  if (v.approved) {
+    if (state.replanAttempts > 0) return "replanned";
+    return state.regenerationAttempts > 0 ? "regenerated" : "approved";
+  }
   return "fallback";
 }
 
@@ -52,6 +62,7 @@ export async function persistTraceNode(
       userId: state.userId,
       query: state.query,
       intent: state.intent,
+      intentSlots: state.intentSlots,
       trace: state.trace,
       finalStatus: deriveFinalStatus(state),
       recommendationId: state.recommendationId,
